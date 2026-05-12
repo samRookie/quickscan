@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 
 /**
  * CameraScreen — Live camera preview with frame capture.
@@ -15,6 +15,7 @@ function CameraScreen({ onCapture }) {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const brightnessCanvasRef = useRef(null);
+  const isMountedRef = useRef(true);
   const [error, setError] = useState(null);
   const [isLowLight, setIsLowLight] = useState(false);
   const [isTorchSupported, setIsTorchSupported] = useState(false);
@@ -23,68 +24,122 @@ function CameraScreen({ onCapture }) {
   const [isScreenLightOn, setIsScreenLightOn] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function startCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-          audio: false,
-        });
-
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-
-        streamRef.current = stream;
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-
-        const track = stream.getVideoTracks()[0];
-        if (track) {
-          const settings = track.getSettings();
-          setIsFrontCamera(settings.facingMode === 'user');
-
-          // Check torch capability
-          // NOTE: getCapabilities might not exist in some older browsers
-          if (track.getCapabilities) {
-            const capabilities = track.getCapabilities();
-            setIsTorchSupported(!!capabilities.torch);
-          }
-        }
-      } catch (err) {
-        console.error('[CameraScreen] Failed to access camera:', err);
-
-        if (!cancelled) {
-          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-            setError('Camera access is required. Please allow camera permissions and reload.');
-          } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-            setError('No camera found on this device.');
-          } else {
-            setError(`Camera error: ${err.message}`);
-          }
-        }
-      }
+  const stopStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
 
-    startCamera();
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
+
+    if (canvasRef.current) {
+      canvasRef.current.width = 0;
+      canvasRef.current.height = 0;
+    }
+
+    if (isMountedRef.current) {
+      setIsTorchOn(false);
+      setIsTorchSupported(false);
+    }
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    if (streamRef.current) return;
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Camera is not supported in this browser.');
+      return;
+    }
+
+    try {
+      setError(null);
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+
+      if (!isMountedRef.current || document.visibilityState === 'hidden') {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      stopStream();
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        const settings = track.getSettings();
+        setIsFrontCamera(settings.facingMode === 'user');
+
+        if (track.getCapabilities) {
+          const capabilities = track.getCapabilities();
+          setIsTorchSupported(Boolean(capabilities.torch));
+        }
+      }
+    } catch (err) {
+      if (!isMountedRef.current) return;
+
+      console.error('[CameraScreen] Failed to access camera:', err);
+
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setError('Camera access is required. Please allow camera permissions and reload.');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setError('No camera found on this device.');
+      } else {
+        setError(`Camera error: ${err.message}`);
+      }
+    }
+  }, [stopStream]);
+
+  useEffect(() => {
+    let cancelled = false;
+    isMountedRef.current = true;
+
+    const startupTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        startCamera();
+      }
+    }, 0);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        stopStream();
+        return;
+      }
+
+      if (!cancelled) {
+        startCamera();
+      }
+    };
+
+    const handlePageHide = () => {
+      stopStream();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
 
     return () => {
       cancelled = true;
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-      }
+      isMountedRef.current = false;
+      window.clearTimeout(startupTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+      stopStream();
     };
-  }, []);
+  }, [startCamera, stopStream]);
 
   // Brightness detection loop
   useEffect(() => {
@@ -94,6 +149,7 @@ function CameraScreen({ onCapture }) {
       if (!video || !canvas || video.videoWidth === 0) return;
 
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return;
       ctx.drawImage(video, 0, 0, 10, 10);
       const imageData = ctx.getImageData(0, 0, 10, 10);
       const data = imageData.data;
@@ -170,9 +226,14 @@ function CameraScreen({ onCapture }) {
       canvas.height = height;
 
       const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        setIsCapturing(false);
+        return;
+      }
       ctx.drawImage(video, 0, 0, width, height);
 
       const imageData = canvas.toDataURL('image/jpeg', 0.95);
+      stopStream();
       onCapture(imageData, isLowLight);
     } catch (err) {
       console.error("Capture failed:", err);
