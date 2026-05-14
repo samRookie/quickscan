@@ -15,11 +15,13 @@ function CameraScreen({ onCapture }) {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const brightnessCanvasRef = useRef(null);
+  const fileInputRef = useRef(null);
   const isMountedRef = useRef(true);
   const [error, setError] = useState(null);
   const [isLowLight, setIsLowLight] = useState(false);
   const [isTorchSupported, setIsTorchSupported] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
+  const [facingMode, setFacingMode] = useState('environment');
   const [isFrontCamera, setIsFrontCamera] = useState(false);
   const [isScreenLightOn, setIsScreenLightOn] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -59,7 +61,7 @@ function CameraScreen({ onCapture }) {
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: { ideal: 'environment' },
+          facingMode: { ideal: facingMode },
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },
@@ -101,7 +103,7 @@ function CameraScreen({ onCapture }) {
         setError(`Camera error: ${err.message}`);
       }
     }
-  }, [stopStream]);
+  }, [stopStream, facingMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,7 +155,7 @@ function CameraScreen({ onCapture }) {
       ctx.drawImage(video, 0, 0, 10, 10);
       const imageData = ctx.getImageData(0, 0, 10, 10);
       const data = imageData.data;
-      
+
       let totalBrightness = 0;
       for (let i = 0; i < data.length; i += 4) {
         const r = data[i];
@@ -161,7 +163,7 @@ function CameraScreen({ onCapture }) {
         const b = data[i + 2];
         totalBrightness += (r + g + b) / 3;
       }
-      
+
       const avgBrightness = totalBrightness / 100; // 10x10 pixels
       setIsLowLight(avgBrightness < 80);
     }, 1000);
@@ -186,6 +188,24 @@ function CameraScreen({ onCapture }) {
 
   const toggleScreenLight = () => {
     setIsScreenLightOn(!isScreenLightOn);
+  };
+
+  const toggleCamera = () => {
+    const next = facingMode === 'environment' ? 'user' : 'environment';
+    stopStream();
+    setFacingMode(next);
+    setIsFrontCamera(next === 'user');
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      onCapture(ev.target?.result, false);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   /**
@@ -252,7 +272,7 @@ function CameraScreen({ onCapture }) {
 
   return (
     <div className="camera-container">
-      
+
       {/* Screen Light Overlay */}
       {isFrontCamera && isScreenLightOn && (
         <div style={{
@@ -276,11 +296,11 @@ function CameraScreen({ onCapture }) {
         )}
 
         {isLowLight && (
-           <button className="icon-btn" style={{ color: 'var(--color-primary)' }}>
-             <span className="material-symbols-outlined">wb_twilight</span>
-           </button>
+          <button className="icon-btn" style={{ color: 'var(--color-primary)' }}>
+            <span className="material-symbols-outlined">wb_twilight</span>
+          </button>
         )}
-        
+
         {isFrontCamera ? (
           <button className={`icon-btn ${isScreenLightOn ? 'primary' : ''}`} onClick={toggleScreenLight}>
             <span className="material-symbols-outlined">{isScreenLightOn ? 'light_mode' : 'highlight'}</span>
@@ -317,9 +337,18 @@ function CameraScreen({ onCapture }) {
       <canvas ref={canvasRef} style={{ display: 'none' }} />
       <canvas ref={brightnessCanvasRef} width={10} height={10} style={{ display: 'none' }} />
 
+      {/* Hidden file input for gallery import */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleFileSelect}
+      />
+
       {/* Bottom controls */}
       <div className="bottom-bar">
-        <button className="icon-btn">
+        <button className="icon-btn" onClick={() => fileInputRef.current?.click()}>
           <span className="material-symbols-outlined">photo_library</span>
         </button>
 
@@ -334,7 +363,7 @@ function CameraScreen({ onCapture }) {
           </div>
         </div>
 
-        <button className="icon-btn">
+        <button className="icon-btn" onClick={toggleCamera} disabled={isCapturing}>
           <span className="material-symbols-outlined">flip_camera_ios</span>
         </button>
       </div>

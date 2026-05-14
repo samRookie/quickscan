@@ -1,5 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { generatePDF } from '../utils/generatePDF';
+
+function sanitizeFilename(name) {
+  return name
+    .replace(/[/\\<>:"|?*]/g, '')
+    .replace(/\.\./g, '')
+    .replace(/\s+/g, '_')
+    .trim() || 'QuickScan_Document';
+}
 
 function ExportScreen({ allImages, onBack, onFinish }) {
   const [isGenerating, setIsGenerating] = useState(true);
@@ -7,6 +15,7 @@ function ExportScreen({ allImages, onBack, onFinish }) {
   const [pdfError, setPdfError] = useState(null);
   const [fileName, setFileName] = useState(`QuickScan_Document`);
   const [retryCount, setRetryCount] = useState(0);
+  const blobUrlRef = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -46,13 +55,18 @@ function ExportScreen({ allImages, onBack, onFinish }) {
 
     return () => {
       isMounted = false;
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
     };
   }, [allImages, retryCount]);
 
   const handleDownload = async () => {
     if (!pdfBlob) return;
     
-    const fullFileName = `${fileName || 'QuickScan'}.pdf`;
+    const safeName = sanitizeFilename(fileName);
+    const fullFileName = `${safeName}.pdf`;
 
     // Try to use the modern File System Access API to let user choose where to save
     if (window.showSaveFilePicker) {
@@ -75,20 +89,24 @@ function ExportScreen({ allImages, onBack, onFinish }) {
     }
 
     // Fallback: standard web download
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+    }
     const url = URL.createObjectURL(pdfBlob);
+    blobUrlRef.current = url;
     const a = document.createElement('a');
     a.href = url;
     a.download = fullFileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const handleShare = async () => {
     if (!pdfBlob) return;
     
-    const fullFileName = `${fileName || 'QuickScan'}.pdf`;
+    const safeName = sanitizeFilename(fileName);
+    const fullFileName = `${safeName}.pdf`;
     const file = new File([pdfBlob], fullFileName, { type: 'application/pdf' });
     
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -153,16 +171,16 @@ function ExportScreen({ allImages, onBack, onFinish }) {
                   <p style={{ color: 'var(--color-text-dim)', margin: 0 }}>{allImages.length} page{allImages.length !== 1 ? 's' : ''} Document</p>
                 </div>
 
-                <div style={{ textAlign: 'left' }}>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--color-text-dim)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>File Name</label>
-                  <div style={{ display: 'flex', alignItems: 'center', backgroundColor: 'var(--color-surface)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '12px 16px' }}>
-                    <input 
-                      type="text" 
-                      value={fileName}
-                      onChange={(e) => setFileName(e.target.value)}
-                      style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: 'var(--color-white)', fontSize: '16px', width: '100%' }}
-                      placeholder="Enter filename"
-                    />
+                  <div style={{ textAlign: 'left' }}>
+                    <label style={{ display: 'block', fontSize: '12px', color: 'var(--color-text-dim)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>File Name</label>
+                    <div style={{ display: 'flex', alignItems: 'center', backgroundColor: 'var(--color-surface)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '12px 16px' }}>
+                      <input 
+                        type="text" 
+                        value={fileName}
+                        onChange={(e) => setFileName(sanitizeFilename(e.target.value))}
+                        style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: 'var(--color-white)', fontSize: '16px', width: '100%' }}
+                        placeholder="Enter filename"
+                      />
                     <span style={{ color: 'var(--color-text-dim)', marginLeft: '8px' }}>.pdf</span>
                   </div>
                 </div>
