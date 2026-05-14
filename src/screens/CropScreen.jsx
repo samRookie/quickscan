@@ -1,27 +1,19 @@
 import { useRef, useEffect, useState } from 'react';
 import Cropper from 'cropperjs';
 import 'cropperjs/dist/cropper.css';
+import ThumbnailStrip from '../components/ThumbnailStrip';
 
-/**
- * CropScreen — Allows the user to crop the captured image using Cropper.js.
- *
- * @param {Object} props
- * @param {string} props.image - Base64 JPEG data URL of the captured frame.
- * @param {function} props.onBack - Navigate back to preview screen.
- * @param {function} props.onDone - Called with the cropped base64 image string.
- */
-function CropScreen({ image, onBack, onDone }) {
+function CropScreen({ image, allImages, currentIndex, isLowQuality, onSelectImage, onRemove, onScanMore, onBack, onDone }) {
   const imageRef = useRef(null);
   const cropperRef = useRef(null);
   const [isCropping, setIsCropping] = useState(false);
   const [rotationCount, setRotationCount] = useState(0);
   const [straightenAngle, setStraightenAngle] = useState(0);
+  const [selectedAspect, setSelectedAspect] = useState('free');
 
-  // Initialize Cropper.js on mount
   useEffect(() => {
     if (!imageRef.current || !image) return;
 
-    // Small delay to ensure the image element is fully rendered in the DOM
     const timer = setTimeout(() => {
       cropperRef.current = new Cropper(imageRef.current, {
         responsive: true,
@@ -32,7 +24,6 @@ function CropScreen({ image, onBack, onDone }) {
       });
     }, 100);
 
-    // Cleanup: destroy cropper instance on unmount
     return () => {
       clearTimeout(timer);
       if (cropperRef.current) {
@@ -42,10 +33,6 @@ function CropScreen({ image, onBack, onDone }) {
     };
   }, [image]);
 
-  /**
-   * Gets the cropped region from the selection, converts to JPEG data URL,
-   * and passes it upstream via onDone.
-   */
   async function handleCrop() {
     const cropper = cropperRef.current;
     if (!cropper) return;
@@ -60,7 +47,7 @@ function CropScreen({ image, onBack, onDone }) {
       if (!canvas) {
         throw new Error('No crop area is available.');
       }
-      
+
       const croppedImage = canvas.toDataURL('image/jpeg', 1.0);
       onDone(croppedImage);
     } catch (err) {
@@ -94,9 +81,20 @@ function CropScreen({ image, onBack, onDone }) {
     applyRotation(rotationCount, angle);
   };
 
-  /**
-   * Resets the crop selection back to its initial state (full coverage).
-   */
+  const handleAspectFree = () => {
+    if (cropperRef.current) {
+      cropperRef.current.setAspectRatio(NaN);
+      setSelectedAspect('free');
+    }
+  };
+
+  const handleAspectA4 = () => {
+    if (cropperRef.current) {
+      cropperRef.current.setAspectRatio(1 / 1.414);
+      setSelectedAspect('a4');
+    }
+  };
+
   function handleReset() {
     const cropper = cropperRef.current;
     if (cropper) {
@@ -109,8 +107,8 @@ function CropScreen({ image, onBack, onDone }) {
   if (!image) {
     return (
       <div style={{ padding: '2rem', fontFamily: 'system-ui, sans-serif' }}>
-        <h2>Crop</h2>
-        <p style={{ color: '#c00' }}>No image to crop.</p>
+        <h2>Adjust</h2>
+        <p style={{ color: '#c00' }}>No image to adjust.</p>
         <button onClick={onBack}>← Back</button>
       </div>
     );
@@ -122,9 +120,9 @@ function CropScreen({ image, onBack, onDone }) {
         <button className="icon-btn" onClick={onBack}>
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
-        <h2 className="screen-title">Crop Image</h2>
-        <button className="icon-btn" onClick={handleReset}>
-          <span className="material-symbols-outlined">restart_alt</span>
+        <h2 className="screen-title">Adjust</h2>
+        <button className="icon-btn" onClick={() => onRemove && onRemove(currentIndex)}>
+          <span className="material-symbols-outlined">delete</span>
         </button>
       </div>
 
@@ -133,7 +131,7 @@ function CropScreen({ image, onBack, onDone }) {
           <img
             ref={imageRef}
             src={image}
-            alt="Image to crop"
+            alt="Image to adjust"
             style={{
               display: 'block',
               width: '100%',
@@ -143,41 +141,62 @@ function CropScreen({ image, onBack, onDone }) {
           />
         </div>
 
-        <div style={{ width: '100%', maxWidth: '400px', padding: '24px 0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', gap: '16px' }}>
-            <button className="btn-secondary" onClick={handleRotateLeft}>
+        {isLowQuality && (
+          <div style={{ color: '#ffaa00', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>
+            Image may be unclear. Consider retaking.
+          </div>
+        )}
+
+        <div style={{ width: '100%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap' }}>
+            <button className="icon-btn" onClick={handleRotateLeft} style={{ flexShrink: 0 }}>
               <span className="material-symbols-outlined">rotate_left</span>
             </button>
-            <button className="btn-secondary" onClick={handleRotateRight}>
+            <button className="icon-btn" onClick={handleRotateRight} style={{ flexShrink: 0 }}>
               <span className="material-symbols-outlined">rotate_right</span>
             </button>
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <span style={{ fontSize: '12px' }}>-10°</span>
-            <input 
-              type="range" 
-              min="-10" 
-              max="10" 
-              step="0.5"
-              value={straightenAngle} 
-              onChange={handleStraighten} 
-              style={{ flex: 1, accentColor: 'var(--color-primary)' }}
-            />
-            <span style={{ fontSize: '12px' }}>+10°</span>
-          </div>
-          
-          <div style={{ display: 'flex', gap: '16px' }}>
-            <button className="btn-secondary" onClick={() => cropperRef.current && cropperRef.current.setAspectRatio(NaN)}>
+            <button className="icon-btn" onClick={handleReset} style={{ flexShrink: 0 }}>
+              <span className="material-symbols-outlined">restart_alt</span>
+            </button>
+            <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.06)', flexShrink: 0 }} />
+            <button
+              className={`aspect-chip ${selectedAspect === 'free' ? 'active' : ''}`}
+              onClick={handleAspectFree}
+            >
               Free
             </button>
-            <button className="btn-secondary" onClick={() => cropperRef.current && cropperRef.current.setAspectRatio(1 / 1.414)}>
+            <button
+              className={`aspect-chip ${selectedAspect === 'a4' ? 'active' : ''}`}
+              onClick={handleAspectA4}
+            >
               A4
             </button>
+            <div style={{ flex: 1, minWidth: '60px', padding: '0 4px' }}>
+              <input
+                type="range"
+                className="adjust-slider"
+                min="-10"
+                max="10"
+                step="0.5"
+                value={straightenAngle}
+                onChange={handleStraighten}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <span style={{ fontSize: '11px', color: 'var(--color-text-dim)', minWidth: '24px', textAlign: 'center', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+              {straightenAngle}°
+            </span>
           </div>
-          
-          <button className="btn-primary" onClick={handleCrop} disabled={isCropping} style={{ marginTop: '8px' }}>
-            {isCropping ? 'Cropping...' : 'Done'}
+
+          <ThumbnailStrip
+            allImages={allImages}
+            currentIndex={currentIndex}
+            onSelectImage={onSelectImage}
+            onScanMore={onScanMore}
+          />
+
+          <button className="btn-primary" onClick={handleCrop} disabled={isCropping} style={{ marginTop: '4px' }}>
+            {isCropping ? 'Processing...' : 'Continue'}
           </button>
         </div>
       </div>

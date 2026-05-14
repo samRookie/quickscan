@@ -2,35 +2,33 @@ import React, { useState, useEffect, useCallback, Suspense } from 'react';
 
 // Lazy load screens for bundle optimization
 const CameraScreen = React.lazy(() => import('./screens/CameraScreen'));
-const PreviewScreen = React.lazy(() => import('./screens/PreviewScreen'));
 const CropScreen = React.lazy(() => import('./screens/CropScreen'));
 const EnhanceScreen = React.lazy(() => import('./screens/EnhanceScreen'));
 const ExportScreen = React.lazy(() => import('./screens/ExportScreen'));
 
 /**
- * Screen states for the QuickScan app flow.
- * Each state represents a step in the document scanning pipeline.
+ * Workflow steps for the QuickScan app flow.
+ * Each step represents a stage in the document scanning pipeline.
  *
- * Flow: camera → preview → crop → enhance
+ * Flow: camera → adjust → enhance → export
  */
-const SCREENS = {
+const STEPS = {
   CAMERA: 'camera',
-  PREVIEW: 'preview',
-  CROP: 'crop',
+  ADJUST: 'adjust',
   ENHANCE: 'enhance',
   EXPORT: 'export',
 };
 
 function App() {
-  const [currentScreen, setCurrentScreen] = useState(SCREENS.CAMERA);
-  const [capturedImages, setCapturedImages] = useState([]); // array of objects { id, original, cropped, enhanced }
+  const [currentStep, setCurrentStep] = useState(STEPS.CAMERA);
+  const [capturedImages, setCapturedImages] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
 
   // Clear session to ensure data privacy
   const clearSession = useCallback(() => {
     setCapturedImages([]);
     setCurrentIndex(0);
-    setCurrentScreen(SCREENS.CAMERA);
+    setCurrentStep(STEPS.CAMERA);
   }, []);
 
   // 15-minute inactivity auto-clear for privacy
@@ -43,7 +41,7 @@ function App() {
           clearSession();
           alert('Session expired due to inactivity. Images cleared for privacy.');
         }
-      }, 15 * 60 * 1000); // 15 mins
+      }, 15 * 60 * 1000);
     };
 
     window.addEventListener('mousemove', resetTimer);
@@ -59,40 +57,34 @@ function App() {
     };
   }, [capturedImages, clearSession]);
 
-  const goTo = (screen) => setCurrentScreen(screen);
-
   // Get the currently active document
   const activeDocument = capturedImages[currentIndex] || null;
   const activeOriginal = activeDocument ? activeDocument.original : null;
   const activeCropped = activeDocument ? activeDocument.cropped : null;
-  const activeEnhanced = activeDocument?.enhanced?.[activeDocument?.selectedFilter] || null;
 
   /**
    * Called by CameraScreen after a frame is captured.
-   * Stores the base64 image and navigates to the preview screen.
-   * Resets any previous crop result.
+   * Stores the base64 image and navigates to the adjust step.
    */
   function handleCapture(imageData, isLowQuality = false) {
     setCapturedImages((prev) => {
       const newArray = [...prev];
       if (currentIndex < newArray.length) {
-        // Retaking an existing image
         newArray[currentIndex] = { ...newArray[currentIndex], original: imageData, cropped: null, enhanced: null, isLowQuality };
       } else {
-        // Appending a new image
         newArray.push({ id: Date.now(), original: imageData, cropped: null, enhanced: null, isLowQuality });
       }
       return newArray;
     });
-    setCurrentScreen(SCREENS.PREVIEW);
+    setCurrentStep(STEPS.ADJUST);
   }
 
   /**
    * Called to retake the current image.
-   * We keep the same currentIndex so handleCapture overwrites it.
+   * Soft return to camera — session state is preserved.
    */
   function handleRetake() {
-    setCurrentScreen(SCREENS.CAMERA);
+    setCurrentStep(STEPS.CAMERA);
   }
 
   /**
@@ -100,7 +92,7 @@ function App() {
    */
   function handleScanMore() {
     setCurrentIndex(capturedImages.length);
-    setCurrentScreen(SCREENS.CAMERA);
+    setCurrentStep(STEPS.CAMERA);
   }
 
   /**
@@ -112,7 +104,7 @@ function App() {
       if (newArray.length === 0) {
         // All images deleted, reset state and go to camera
         setCurrentIndex(0);
-        setCurrentScreen(SCREENS.CAMERA);
+        setCurrentStep(STEPS.CAMERA);
       } else if (currentIndex >= newArray.length) {
         setCurrentIndex(newArray.length - 1);
       } else if (indexToRemove < currentIndex) {
@@ -124,7 +116,7 @@ function App() {
 
   /**
    * Called by CropScreen when the user confirms their crop.
-   * Stores the cropped image and advances to the enhance screen.
+   * Stores the cropped image and advances to the enhance step.
    */
   function handleCropDone(croppedImageData) {
     setCapturedImages((prev) => {
@@ -136,11 +128,12 @@ function App() {
       }
       return newArray;
     });
-    setCurrentScreen(SCREENS.PREVIEW); // Go back to preview to view or scan more
+    setCurrentStep(STEPS.ENHANCE);
   }
 
   /**
    * Called by EnhanceScreen when user is done applying filters.
+   * Advances to the export step.
    */
   function handleEnhanceDone(enhancedFilters, selectedFilter) {
     setCapturedImages((prev) => {
@@ -151,58 +144,57 @@ function App() {
       }
       return newArray;
     });
-    setCurrentScreen(SCREENS.PREVIEW);
+    setCurrentStep(STEPS.EXPORT);
   }
 
   /**
-   * Renders the active screen component based on current state.
+   * Renders the active screen component based on current workflow step.
    */
   function renderScreen() {
-    switch (currentScreen) {
-      case SCREENS.CAMERA:
+    switch (currentStep) {
+      case STEPS.CAMERA:
         return <CameraScreen onCapture={handleCapture} />;
 
-      case SCREENS.PREVIEW:
-        return (
-          <PreviewScreen
-            image={activeEnhanced || activeCropped || activeOriginal}
-            allImages={capturedImages}
-            currentIndex={currentIndex}
-            onSelectImage={(index) => setCurrentIndex(index)}
-            onRetake={handleRetake}
-            onScanMore={handleScanMore}
-            onRemove={handleRemoveImage}
-            onContinue={() => goTo(SCREENS.CROP)}
-            onEnhance={() => goTo(SCREENS.ENHANCE)}
-            onExport={() => goTo(SCREENS.EXPORT)}
-          />
-        );
-
-      case SCREENS.CROP:
+      case STEPS.ADJUST:
         return (
           <CropScreen
-            image={activeOriginal} // Always crop from the original source
-            onBack={() => goTo(SCREENS.PREVIEW)}
+            image={activeOriginal}
+            allImages={capturedImages}
+            currentIndex={currentIndex}
+            isLowQuality={activeDocument?.isLowQuality}
+            onSelectImage={(index) => setCurrentIndex(index)}
+            onRemove={handleRemoveImage}
+            onScanMore={handleScanMore}
+            onBack={handleRetake}
             onDone={handleCropDone}
           />
         );
 
-      case SCREENS.ENHANCE:
+      case STEPS.ENHANCE:
         return (
           <EnhanceScreen
             image={activeCropped || activeOriginal}
             initialEnhanced={activeDocument?.enhanced}
             initialFilter={activeDocument?.selectedFilter}
-            onBack={() => goTo(SCREENS.PREVIEW)}
+            allImages={capturedImages}
+            currentIndex={currentIndex}
+            onSelectImage={(index) => setCurrentIndex(index)}
+            onRemove={handleRemoveImage}
+            onScanMore={handleScanMore}
+            onBack={() => setCurrentStep(STEPS.ADJUST)}
             onDone={handleEnhanceDone}
           />
         );
 
-      case SCREENS.EXPORT:
+      case STEPS.EXPORT:
         return (
           <ExportScreen
             allImages={capturedImages}
-            onBack={() => goTo(SCREENS.PREVIEW)}
+            currentIndex={currentIndex}
+            onSelectImage={(index) => setCurrentIndex(index)}
+            onRemove={handleRemoveImage}
+            onScanMore={handleScanMore}
+            onBack={() => setCurrentStep(STEPS.ENHANCE)}
             onFinish={clearSession}
           />
         );
