@@ -14,6 +14,10 @@ function CropScreen({ image, allImages, currentIndex, isLowQuality, onSelectImag
   useEffect(() => {
     if (!imageRef.current || !image) return;
 
+    setRotationCount(0);
+    setStraightenAngle(0);
+    setSelectedAspect('free');
+
     const timer = setTimeout(() => {
       cropperRef.current = new Cropper(imageRef.current, {
         responsive: true,

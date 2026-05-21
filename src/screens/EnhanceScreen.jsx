@@ -9,6 +9,16 @@ function EnhanceScreen({ image, initialEnhanced, initialFilter, allImages, curre
   const [isProcessing, setIsProcessing] = useState(false);
   const canvasRef = useRef(null);
 
+  // Sync state when active page/image changes to prevent visual bleed from previous image
+  useEffect(() => {
+    if (initialEnhanced) {
+      setFilters(initialEnhanced);
+    } else {
+      setFilters({ original: image, grayscale: null, document: null });
+    }
+    setSelectedFilter(initialFilter || 'original');
+  }, [image, initialEnhanced, initialFilter]);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -80,6 +90,10 @@ function EnhanceScreen({ image, initialEnhanced, initialFilter, allImages, curre
             document: documentDataUrl
           });
           setIsProcessing(false);
+
+          // Zero out canvas size to immediately release GPU backing memory
+          canvas.width = 0;
+          canvas.height = 0;
         }
       };
       img.src = image;
@@ -90,6 +104,11 @@ function EnhanceScreen({ image, initialEnhanced, initialFilter, allImages, curre
     return () => {
       isMounted = false;
       clearTimeout(processingTimer);
+      const canvas = canvasRef.current;
+      if (canvas) {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
     };
   }, [image, filters.document, filters.grayscale, filters.original]);
 

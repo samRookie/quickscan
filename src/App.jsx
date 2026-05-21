@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
+import { normalizeScanFormat, attachFormatToScan } from './utils/scanModelUtils.js';
 
 // Lazy load screens for bundle optimization
 const CameraScreen = React.lazy(() => import('./screens/CameraScreen'));
@@ -58,7 +59,9 @@ function App() {
   }, [capturedImages, clearSession]);
 
   // Get the currently active document
-  const activeDocument = capturedImages[currentIndex] || null;
+  const activeDocument = capturedImages[currentIndex]
+    ? normalizeScanFormat(capturedImages[currentIndex])
+    : null;
   const activeOriginal = activeDocument ? activeDocument.original : null;
   const activeCropped = activeDocument ? activeDocument.cropped : null;
 
@@ -69,10 +72,13 @@ function App() {
   function handleCapture(imageData, isLowQuality = false) {
     setCapturedImages((prev) => {
       const newArray = [...prev];
+      let rawScan;
       if (currentIndex < newArray.length) {
-        newArray[currentIndex] = { ...newArray[currentIndex], original: imageData, cropped: null, enhanced: null, isLowQuality };
+        rawScan = { ...newArray[currentIndex], original: imageData, cropped: null, enhanced: null, isLowQuality };
+        newArray[currentIndex] = attachFormatToScan(rawScan, 'freeform');
       } else {
-        newArray.push({ id: Date.now(), original: imageData, cropped: null, enhanced: null, isLowQuality });
+        rawScan = { id: Date.now(), original: imageData, cropped: null, enhanced: null, isLowQuality };
+        newArray.push(attachFormatToScan(rawScan, 'freeform'));
       }
       return newArray;
     });
@@ -122,9 +128,16 @@ function App() {
     setCapturedImages((prev) => {
       const newArray = [...prev];
       if (newArray[currentIndex]) {
-        newArray[currentIndex].cropped = croppedImageData;
-        newArray[currentIndex].enhanced = { original: croppedImageData, grayscale: null, document: null };
-        newArray[currentIndex].selectedFilter = 'original';
+        const existing = newArray[currentIndex];
+        const updated = {
+          ...existing,
+          cropped: croppedImageData,
+          croppedImage: croppedImageData,
+          enhanced: { original: croppedImageData, grayscale: null, document: null },
+          enhancedImage: croppedImageData,
+          selectedFilter: 'original'
+        };
+        newArray[currentIndex] = normalizeScanFormat(updated);
       }
       return newArray;
     });
@@ -139,8 +152,14 @@ function App() {
     setCapturedImages((prev) => {
       const newArray = [...prev];
       if (newArray[currentIndex]) {
-        newArray[currentIndex].enhanced = enhancedFilters;
-        newArray[currentIndex].selectedFilter = selectedFilter;
+        const existing = newArray[currentIndex];
+        const updated = {
+          ...existing,
+          enhanced: enhancedFilters,
+          selectedFilter: selectedFilter,
+          enhancedImage: enhancedFilters[selectedFilter] || existing.croppedImage || existing.originalImage || ''
+        };
+        newArray[currentIndex] = normalizeScanFormat(updated);
       }
       return newArray;
     });
