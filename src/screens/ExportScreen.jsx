@@ -134,7 +134,7 @@ function ExportScreen({
   };
 
   const previewImage = allImages.length > 0
-    ? (allImages[0].enhanced?.[allImages[0].selectedFilter] || allImages[0].cropped || allImages[0].original)
+    ? (allImages[0].preview || allImages[0].cropped || allImages[0].original)
     : null;
 
   return (

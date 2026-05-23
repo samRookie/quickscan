@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
-import { normalizeScanFormat, attachFormatToScan } from './utils/scanModelUtils.js';
+import { normalizeScanFormat, attachFormatToScan, generateThumbnail, generatePreview } from './utils/scanModelUtils.js';
+import { useRegisterSW } from 'virtual:pwa-register/react';
 
 // Lazy load screens for bundle optimization
 const CameraScreen = React.lazy(() => import('./screens/CameraScreen'));
@@ -21,15 +22,68 @@ const STEPS = {
 };
 
 function App() {
+  const {
+    needRefresh: [needRefresh, setNeedRefresh],
+    updateServiceWorker,
+  } = useRegisterSW({
+    onRegistered(r) {
+      console.log('[PWA SW] Registered successfully:', r);
+    },
+    onRegisterError(error) {
+      console.error('[PWA SW] Registration failed:', error);
+    },
+  });
+
   const [currentStep, setCurrentStep] = useState(STEPS.CAMERA);
   const [capturedImages, setCapturedImages] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [deletedBuffer, setDeletedBuffer] = useState(null);
 
   // Clear session to ensure data privacy
   const clearSession = useCallback(() => {
     setCapturedImages([]);
     setCurrentIndex(0);
+    setDeletedBuffer(null);
     setCurrentStep(STEPS.CAMERA);
+  }, []);
+
+  // Auto-expire deletion buffer after 6 seconds for clean memory recycling
+  useEffect(() => {
+    if (!deletedBuffer) return;
+    const timer = setTimeout(() => {
+      setDeletedBuffer(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [deletedBuffer]);
+
+  // Asynchronous thumbnail generation pipeline to compress images to tiny ~5-10KB previews
+  const generateAndStoreThumbnail = useCallback((index, sourceImage) => {
+    if (!sourceImage) return;
+    generateThumbnail(sourceImage).then((thumb) => {
+      setCapturedImages((prev) => {
+        if (index < 0 || index >= prev.length) return prev;
+        const newArray = [...prev];
+        newArray[index] = { ...newArray[index], thumbnail: thumb };
+        return newArray;
+      });
+    }).catch(err => {
+      console.error('[App] Failed to generate async preview:', err);
+    });
+  }, []);
+
+  // Asynchronous preview generation pipeline to compress images to medium-resolution ~40-50KB previews
+  const generateAndStorePreview = useCallback((index, sourceImage) => {
+    if (!sourceImage) return;
+    generatePreview(sourceImage).then((previewImg) => {
+      setCapturedImages((prev) => {
+        if (index < 0 || index >= prev.length) return prev;
+        const newArray = [...prev];
+        newArray[index] = { ...newArray[index], preview: previewImg };
+        return newArray;
+      });
+    }).catch(err => {
+      console.error('[App] Failed to generate async preview:', err);
+    });
   }, []);
 
   // 15-minute inactivity auto-clear for privacy
@@ -70,6 +124,7 @@ function App() {
    * Stores the base64 image and navigates to the adjust step.
    */
   function handleCapture(imageData, presetId = 'freeform', isLowQuality = false) {
+    let targetIndex = currentIndex;
     setCapturedImages((prev) => {
       const newArray = [...prev];
       let rawScan;
@@ -77,12 +132,18 @@ function App() {
       if (currentIndex < newArray.length) {
         rawScan = { ...newArray[currentIndex], original: imageData, cropped: null, enhanced: null, isLowQuality };
         newArray[currentIndex] = attachFormatToScan(rawScan, targetPreset);
+        targetIndex = currentIndex;
       } else {
         rawScan = { id: Date.now(), original: imageData, cropped: null, enhanced: null, isLowQuality };
         newArray.push(attachFormatToScan(rawScan, targetPreset));
+        targetIndex = newArray.length - 1;
       }
       return newArray;
     });
+
+    // Trigger non-blocking async preview compression
+    generateAndStoreThumbnail(targetIndex, imageData);
+    generateAndStorePreview(targetIndex, imageData);
     setCurrentStep(STEPS.ADJUST);
   }
 
@@ -103,11 +164,21 @@ function App() {
   }
 
   /**
-   * Called to completely remove a scanned page from the sequence.
+   * Called to remove a page with a 6-second undo capability.
+   * Shifts selection focus logically and atomic-clears the page.
    */
-  function handleRemoveImage(indexToRemove) {
+  const handleRemoveImage = useCallback((indexToRemove) => {
     setCapturedImages((prev) => {
+      if (indexToRemove < 0 || indexToRemove >= prev.length) return prev;
+      
+      // Store in temporary deletion buffer before filtering out
+      setDeletedBuffer({
+        page: prev[indexToRemove],
+        index: indexToRemove
+      });
+
       const newArray = prev.filter((_, idx) => idx !== indexToRemove);
+      
       if (newArray.length === 0) {
         // All images deleted, reset state and go to camera
         setCurrentIndex(0);
@@ -119,12 +190,25 @@ function App() {
       }
       return newArray;
     });
-  }
+  }, [currentIndex]);
 
   /**
-   * Called by CropScreen when the user confirms their crop.
-   * Stores the cropped image and advances to the enhance step.
+   * Safe accidental recovery undo handler.
+   * Restores the page from temporary buffer back to its original array slot.
    */
+  const handleUndoDelete = useCallback(() => {
+    if (!deletedBuffer) return;
+    const { page, index } = deletedBuffer;
+    setCapturedImages((prev) => {
+      const restored = [...prev];
+      // Splice the page back to its exact index
+      restored.splice(index, 0, page);
+      return restored;
+    });
+    setCurrentIndex(index);
+    setDeletedBuffer(null);
+  }, [deletedBuffer]);
+
   function handleCropDone(croppedImageData) {
     setCapturedImages((prev) => {
       const newArray = [...prev];
@@ -142,6 +226,10 @@ function App() {
       }
       return newArray;
     });
+
+    // Trigger non-blocking async preview compression
+    generateAndStoreThumbnail(currentIndex, croppedImageData);
+    generateAndStorePreview(currentIndex, croppedImageData);
     setCurrentStep(STEPS.ENHANCE);
   }
 
@@ -150,6 +238,7 @@ function App() {
    * Advances to the export step.
    */
   function handleEnhanceDone(enhancedFilters, selectedFilter) {
+    const activeEnhanced = enhancedFilters[selectedFilter] || enhancedFilters.original || '';
     setCapturedImages((prev) => {
       const newArray = [...prev];
       if (newArray[currentIndex]) {
@@ -158,12 +247,16 @@ function App() {
           ...existing,
           enhanced: enhancedFilters,
           selectedFilter: selectedFilter,
-          enhancedImage: enhancedFilters[selectedFilter] || existing.croppedImage || existing.originalImage || ''
+          enhancedImage: activeEnhanced
         };
         newArray[currentIndex] = normalizeScanFormat(updated);
       }
       return newArray;
     });
+
+    // Trigger non-blocking async preview compression
+    generateAndStoreThumbnail(currentIndex, activeEnhanced);
+    generateAndStorePreview(currentIndex, activeEnhanced);
     setCurrentStep(STEPS.EXPORT);
   }
 
@@ -190,20 +283,23 @@ function App() {
     setCurrentStep(STEPS.CAMERA);
   }, []);
 
-  /**
-   * Safely swaps page scan indexes in the session pipeline.
-   * Isolates states per page and maintains index selection.
-   */
-  const handleReorderPage = useCallback((index, direction) => {
+  const handleReorderPage = useCallback((index, targetInput) => {
     setCapturedImages((prev) => {
       if (index < 0 || index >= prev.length) return prev;
-      const targetIndex = direction === 'left' ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+      
+      let targetIndex;
+      if (typeof targetInput === 'number') {
+        targetIndex = targetInput;
+      } else {
+        targetIndex = targetInput === 'left' ? index - 1 : index + 1;
+      }
+      
+      if (targetIndex < 0 || targetIndex >= prev.length || targetIndex === index) return prev;
 
       const newArray = [...prev];
-      const temp = newArray[index];
-      newArray[index] = newArray[targetIndex];
-      newArray[targetIndex] = temp;
+      // Atomic insert reordering via array splicing (mobile-native feel)
+      const [movedItem] = newArray.splice(index, 1);
+      newArray.splice(targetIndex, 0, movedItem);
 
       setCurrentIndex(targetIndex);
       return newArray;
@@ -240,7 +336,7 @@ function App() {
       case STEPS.ENHANCE:
         return (
           <EnhanceScreen
-            image={activeCropped || activeOriginal}
+            image={activeDocument?.preview || activeCropped || activeOriginal}
             initialEnhanced={activeDocument?.enhanced}
             initialFilter={activeDocument?.selectedFilter}
             allImages={capturedImages}
@@ -280,6 +376,39 @@ function App() {
       <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center', color: 'white' }}>Loading...</div>}>
         {renderScreen()}
       </Suspense>
+
+      {deletedBuffer && (
+        <div className="undo-banner" role="status" aria-live="polite">
+          <div className="undo-banner-content">
+            <span className="material-symbols-outlined undo-banner-icon">delete_sweep</span>
+            <span className="undo-banner-text">Page {deletedBuffer.index + 1} deleted.</span>
+          </div>
+          <button className="undo-banner-btn" onClick={handleUndoDelete}>
+            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>undo</span>
+            Undo
+          </button>
+        </div>
+      )}
+
+      {needRefresh && (
+        <div className="update-toast" role="alert" aria-live="assertive">
+          <div className="update-toast-content">
+            <span className="material-symbols-outlined update-toast-icon">system_update_alt</span>
+            <div className="update-toast-text">
+              <h4 className="update-toast-title">Update Available</h4>
+              <p className="update-toast-desc">A new premium version of QuickScan is ready.</p>
+            </div>
+          </div>
+          <div className="update-toast-actions">
+            <button className="update-toast-btn primary" onClick={() => updateServiceWorker(true)}>
+              Update
+            </button>
+            <button className="update-toast-btn secondary" onClick={() => setNeedRefresh(false)}>
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

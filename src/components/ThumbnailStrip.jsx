@@ -1,5 +1,10 @@
+import { useEffect, useRef, useState, memo } from 'react';
 import { normalizeScanFormat } from '../utils/scanModelUtils.js';
 
+/**
+ * ThumbnailStrip — Multi-page session horizontal navigator.
+ * Optimized with React.memo, scroll-into-view auto-centering, and lightweight previews.
+ */
 function ThumbnailStrip({
   allImages = [],
   currentIndex = 0,
@@ -9,6 +14,56 @@ function ThumbnailStrip({
   onReorder,
   onReplace
 }) {
+  const activeRef = useRef(null);
+
+  // Lightweight HTML5 drag-and-drop sorting variables
+  const draggedIndexRef = useRef(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  function handleDragStart(e, index) {
+    draggedIndexRef.current = index;
+    setIsDragging(true);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index);
+  }
+
+  function handleDragOver(e, index) {
+    e.preventDefault();
+    if (draggedIndexRef.current === index) return;
+    setDragOverIndex(index);
+  }
+
+  function handleDragLeave() {
+    setDragOverIndex(null);
+  }
+
+  function handleDragEnd() {
+    draggedIndexRef.current = null;
+    setDragOverIndex(null);
+    setIsDragging(false);
+  }
+
+  function handleDrop(e, targetIndex) {
+    e.preventDefault();
+    const sourceIndex = draggedIndexRef.current;
+    if (sourceIndex !== null && sourceIndex !== targetIndex) {
+      onReorder && onReorder(sourceIndex, targetIndex);
+    }
+    handleDragEnd();
+  }
+
+  // Smoothly center active thumbnail in scrolling horizontal bar
+  useEffect(() => {
+    if (activeRef.current) {
+      activeRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center'
+      });
+    }
+  }, [currentIndex]);
+
   if (allImages.length === 0) return null;
 
   const activeItem = allImages[currentIndex]
@@ -20,63 +75,35 @@ function ThumbnailStrip({
     : 'FREEFORM';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+    <div className="thumbnail-strip-container">
       {/* Dynamic Page Actions Control Row */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: 'var(--color-surface)',
-        border: '1px solid rgba(255, 255, 255, 0.06)',
-        borderRadius: '10px',
-        padding: '6px 12px',
-        width: '100%',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-      }}>
+      <div className="thumbnail-controls-row">
         {/* Left: Metadata and Telemetry */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
-          <span style={{ fontSize: '9px', fontWeight: '800', color: 'var(--color-primary)', letterSpacing: '0.06em' }}>
+        <div className="thumbnail-telemetry-col">
+          <span className="thumbnail-page-index-text">
             PAGE {currentIndex + 1} OF {allImages.length}
           </span>
-          <span style={{ fontSize: '11px', fontWeight: '500', color: 'var(--color-text-dim)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+          <span className="thumbnail-preset-label-text">
             {presetLabel} Format
           </span>
         </div>
 
         {/* Center: Minimal Status Badges */}
-        <div style={{ display: 'flex', gap: '4px' }}>
+        <div className="thumbnail-status-badges">
           {activeItem?.cropped && (
-            <span style={{
-              fontSize: '8px',
-              fontWeight: '800',
-              background: 'rgba(0, 255, 171, 0.1)',
-              color: 'var(--color-primary)',
-              padding: '1px 5px',
-              borderRadius: '4px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em'
-            }}>
+            <span className="badge-cropped">
               Cropped
             </span>
           )}
           {activeItem?.selectedFilter && activeItem.selectedFilter !== 'original' && (
-            <span style={{
-              fontSize: '8px',
-              fontWeight: '800',
-              background: 'rgba(0, 255, 171, 0.1)',
-              color: 'var(--color-primary)',
-              padding: '1px 5px',
-              borderRadius: '4px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em'
-            }}>
+            <span className="badge-enhanced">
               Enhanced
             </span>
           )}
         </div>
 
         {/* Right: Touch-Safe Action Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+        <div className="thumbnail-actions-row">
           <button
             className="icon-btn"
             onClick={() => onReorder && onReorder(currentIndex, 'left')}
@@ -119,19 +146,30 @@ function ThumbnailStrip({
       </div>
 
       {/* Touch-Friendly Horizontal Scrolling Thumbnail Strip */}
-      <div className="thumbnail-list" style={{ width: '100%', margin: '4px 0', scrollBehavior: 'smooth' }}>
+      <div className="thumbnail-list">
         {allImages.map((doc, idx) => {
           const item = normalizeScanFormat(doc);
-          const bgUrl = item.cropped || item.original || '';
+          const bgUrl = item.thumbnail || item.cropped || item.original || '';
+          const isActive = currentIndex === idx;
+          
+          const isCurrentDragging = draggedIndexRef.current === idx;
+          const isCurrentDragOver = dragOverIndex === idx;
+
           return (
             <div
               key={item.id || idx}
-              className={`thumbnail ${currentIndex === idx ? 'active' : ''}`}
+              ref={isActive ? activeRef : null}
+              className={`thumbnail ${isActive ? 'active' : ''} ${isCurrentDragging ? 'dragging' : ''} ${isCurrentDragOver ? 'drag-over' : ''}`}
               onClick={() => onSelectImage && onSelectImage(idx)}
               style={{
                 backgroundImage: bgUrl ? `url(${bgUrl})` : 'none',
-                backgroundColor: 'rgba(255, 255, 255, 0.03)'
               }}
+              draggable="true"
+              onDragStart={(e) => handleDragStart(e, idx)}
+              onDragOver={(e) => handleDragOver(e, idx)}
+              onDragLeave={handleDragLeave}
+              onDragEnd={handleDragEnd}
+              onDrop={(e) => handleDrop(e, idx)}
             >
               <div className="thumbnail-badge">{idx + 1}</div>
             </div>
@@ -139,18 +177,8 @@ function ThumbnailStrip({
         })}
         {onScanMore && (
           <div
-            className="thumbnail"
+            className="thumbnail thumbnail-add-card"
             onClick={onScanMore}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border: '2px dashed rgba(255,255,255,0.15)',
-              cursor: 'pointer',
-              fontSize: '24px',
-              color: 'var(--color-text-dim)',
-              background: 'rgba(255, 255, 255, 0.02)',
-            }}
             title="Add Scanned Page"
           >
             <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>add</span>
@@ -161,4 +189,4 @@ function ThumbnailStrip({
   );
 }
 
-export default ThumbnailStrip;
+export default memo(ThumbnailStrip);

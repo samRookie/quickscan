@@ -8,35 +8,52 @@ export default defineConfig({
     basicSsl(),
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt', // Controlled update prompt to prevent race conditions or forced page reloads
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'QuickScan',
+        id: '/?source=pwa', // Locks launch identity path
+        name: 'QuickScan - Mobile Document Scanner',
         short_name: 'QuickScan',
-        description: 'Mobile-first document scanner PWA',
-        theme_color: '#000000',
-        background_color: '#000000',
+        description: 'Immersive, local-only document scanner and high-quality PDF exporter.',
+        theme_color: '#0c1510', // Brand slate background
+        background_color: '#0c1510',
         display: 'standalone',
         orientation: 'portrait',
+        start_url: '/?source=pwa',
+        categories: ['productivity', 'utilities'],
         icons: [
           {
             src: 'favicon.svg',
             sizes: '192x192',
-            type: 'image/svg+xml'
+            type: 'image/svg+xml',
+            purpose: 'any'
           },
           {
             src: 'favicon.svg',
             sizes: '512x512',
-            type: 'image/svg+xml'
+            type: 'image/svg+xml',
+            purpose: 'any'
+          },
+          {
+            src: 'favicon.svg',
+            sizes: '192x192',
+            type: 'image/svg+xml',
+            purpose: 'maskable'
+          },
+          {
+            src: 'favicon.svg',
+            sizes: '512x512',
+            type: 'image/svg+xml',
+            purpose: 'maskable'
           }
         ]
       },
       workbox: {
-        // Only cache JS, CSS, HTML, and specific static assets.
-        // DO NOT cache images (.jpg, .png, .jpeg) or documents (.pdf) 
-        // to prevent sensitive data from persisting in the Service Worker Cache Storage.
+        // Safe document privacy: Only cache static application shell assets
+        // Excludes temporary blobs, base64 data, dynamic images, and PDF binaries from persistent SW caching
         globPatterns: ['**/*.{js,css,html,svg,woff,woff2}'],
-        runtimeCaching: []
+        runtimeCaching: [],
+        cleanupOutdatedCaches: true // Safe auto-cleanup of old cache caches
       }
     })
   ],

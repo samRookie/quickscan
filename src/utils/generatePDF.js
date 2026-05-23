@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { normalizeScanFormat } from './scanModelUtils.js';
+import { normalizeScanFormat, applyFilterToImage } from './scanModelUtils.js';
 import { getExportPageDimensions, calculateImagePlacement } from './exportPageMapping.js';
 
 /**
@@ -16,7 +16,8 @@ export async function generatePDF(images) {
 
   // 1. Pre-calculate first page dimensions to initialize jsPDF instance correctly
   const firstScan = normalizeScanFormat(images[0]);
-  const firstData = firstScan.enhanced?.[firstScan.selectedFilter] || firstScan.cropped || firstScan.original;
+  const rawFirstSource = firstScan.cropped || firstScan.original;
+  const firstData = await applyFilterToImage(rawFirstSource, firstScan.selectedFilter || 'original');
   
   let firstWidth = 210;
   let firstHeight = 297;
@@ -45,7 +46,8 @@ export async function generatePDF(images) {
   // 2. Iterate pages and render dynamic scales and custom margins
   for (let i = 0; i < images.length; i++) {
     const scan = normalizeScanFormat(images[i]);
-    const imageData = scan.enhanced?.[scan.selectedFilter] || scan.cropped || scan.original;
+    const rawSource = scan.cropped || scan.original;
+    const imageData = await applyFilterToImage(rawSource, scan.selectedFilter || 'original');
 
     if (!imageData) continue;
 

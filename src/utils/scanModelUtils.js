@@ -27,6 +27,12 @@ export function normalizeScanFormat(scan) {
   normalized.cropped = normalized.cropped || normalized.croppedImage || null;
   normalized.croppedImage = normalized.croppedImage || normalized.cropped || null;
 
+  // 2b. Map lightweight thumbnail with fallback to cropped or original
+  normalized.thumbnail = normalized.thumbnail || normalized.cropped || normalized.original || '';
+
+  // 2c. Map lightweight preview with fallback to cropped or original
+  normalized.preview = normalized.preview || normalized.cropped || normalized.original || '';
+
   // Map active filter enhancement
   let activeEnhanced = null;
   if (normalized.enhanced && typeof normalized.enhanced === 'object') {
@@ -134,3 +140,173 @@ export function getScanFormat(scan) {
   const normalized = normalizeScanFormat(scan);
   return normalized ? normalized.format : null;
 }
+
+/**
+ * Asynchronously generates a compressed lightweight thumbnail (120x160px JPEG, ~5-10KB)
+ * using an offscreen canvas.
+ *
+ * @param {string} base64Src - The original high-resolution base64 image source.
+ * @param {number} maxWidth - Target max width.
+ * @param {number} maxHeight - Target max height.
+ * @returns {Promise<string>} A Promise that resolves to the compressed thumbnail base64 string.
+ */
+export async function generateThumbnail(base64Src, maxWidth = 120, maxHeight = 160) {
+  if (!base64Src) return '';
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'medium';
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
+      } else {
+        resolve(base64Src);
+      }
+      
+      // Cleanup canvas memory
+      canvas.width = 0;
+      canvas.height = 0;
+    };
+    img.onerror = () => {
+      resolve(base64Src);
+    };
+    img.src = base64Src;
+  });
+}
+
+/**
+ * Asynchronously generates a compressed lightweight preview (800px max dimension, ~40-50KB JPEG)
+ * using an offscreen canvas.
+ *
+ * @param {string} base64Src - The original high-resolution base64 image source.
+ * @param {number} maxDim - Target max dimension (width or height).
+ * @returns {Promise<string>} A Promise that resolves to the compressed preview base64 string.
+ */
+export async function generatePreview(base64Src, maxDim = 800) {
+  if (!base64Src) return '';
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      
+      if (width > height) {
+        if (width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        }
+      } else {
+        if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      } else {
+        resolve(base64Src);
+      }
+      
+      // Cleanup canvas memory
+      canvas.width = 0;
+      canvas.height = 0;
+    };
+    img.onerror = () => {
+      resolve(base64Src);
+    };
+    img.src = base64Src;
+  });
+}
+
+/**
+ * Asynchronously applies Grayscale or Document filter enhancements to a raw high-resolution base64 scan
+ * using a background offscreen canvas. Used on-demand during exports.
+ *
+ * @param {string} base64Src - The natural high-resolution base64 image.
+ * @param {string} filterName - The name of the enhancement filter ('original', 'grayscale', 'document').
+ * @returns {Promise<string>} A Promise that resolves to the processed high-resolution base64 JPEG.
+ */
+export async function applyFilterToImage(base64Src, filterName) {
+  if (!base64Src || !filterName || filterName === 'original') {
+    return base64Src;
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) {
+        resolve(base64Src);
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      if (filterName === 'grayscale') {
+        for (let i = 0; i < data.length; i += 4) {
+          const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+          data[i] = avg;
+          data[i + 1] = avg;
+          data[i + 2] = avg;
+        }
+        ctx.putImageData(imageData, 0, 0);
+        resolve(canvas.toDataURL('image/jpeg', 0.95));
+      } else if (filterName === 'document') {
+        const contrastFactor = 1.4;
+        const brightnessOffset = 25;
+        for (let i = 0; i < data.length; i += 4) {
+          data[i] = Math.min(255, Math.max(0, ((data[i] - 128) * contrastFactor) + 128 + brightnessOffset));
+          data[i + 1] = Math.min(255, Math.max(0, ((data[i + 1] - 128) * contrastFactor) + 128 + brightnessOffset));
+          data[i + 2] = Math.min(255, Math.max(0, ((data[i + 2] - 128) * contrastFactor) + 128 + brightnessOffset));
+        }
+        ctx.putImageData(imageData, 0, 0);
+        resolve(canvas.toDataURL('image/jpeg', 0.95));
+      } else {
+        resolve(base64Src);
+      }
+
+      // Reclaim canvas memory
+      canvas.width = 0;
+      canvas.height = 0;
+    };
+    img.onerror = () => {
+      resolve(base64Src);
+    };
+    img.src = base64Src;
+  });
+}
+
+
