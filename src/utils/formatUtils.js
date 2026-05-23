@@ -18,12 +18,12 @@ import {
  */
 export function logDevWarning(message) {
   try {
-    const isDev = (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') ||
+    const isDev = (typeof globalThis !== 'undefined' && globalThis.process?.env?.NODE_ENV !== 'production') ||
                   (typeof import.meta !== 'undefined' && import.meta.env?.DEV === true);
     if (isDev) {
       console.warn(`[QuickScan Format System Warning]: ${message}`);
     }
-  } catch (e) {
+  } catch {
     // Fail silently in environments where process or import.meta are constrained
   }
 }

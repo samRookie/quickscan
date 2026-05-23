@@ -10,7 +10,17 @@ function sanitizeFilename(name) {
     .trim() || 'QuickScan_Document';
 }
 
-function ExportScreen({ allImages, currentIndex, onSelectImage, onRemove, onScanMore, onBack, onFinish }) {
+function ExportScreen({
+  allImages,
+  currentIndex,
+  onSelectImage,
+  onRemove,
+  onReorder,
+  onReplace,
+  onScanMore,
+  onBack,
+  onFinish
+}) {
   const [isGenerating, setIsGenerating] = useState(true);
   const [pdfBlob, setPdfBlob] = useState(null);
   const [pdfError, setPdfError] = useState(null);
@@ -197,6 +207,9 @@ function ExportScreen({ allImages, currentIndex, onSelectImage, onRemove, onScan
                   currentIndex={currentIndex}
                   onSelectImage={onSelectImage}
                   onScanMore={onScanMore}
+                  onRemove={onRemove}
+                  onReorder={onReorder}
+                  onReplace={onReplace}
                 />
               </>
             )}

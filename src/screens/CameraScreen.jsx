@@ -1,14 +1,12 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { FORMAT_PRESETS } from '../config/formatPresets.js';
 
 /**
  * CameraScreen — Live camera preview with frame capture.
- *
- * Uses the rear camera (environment) when available.
- * On capture, draws the current video frame to an off-screen canvas,
- * converts it to a JPEG data URL, and passes it upstream via onCapture.
+ * Optimized for immersive mobile viewport usage and format-aware guidance.
  *
  * @param {Object} props
- * @param {function} props.onCapture - Called with the captured base64 image string.
+ * @param {function} props.onCapture - Called with (imageData, selectedPresetId, isLowLight).
  */
 function CameraScreen({ onCapture }) {
   const videoRef = useRef(null);
@@ -17,6 +15,7 @@ function CameraScreen({ onCapture }) {
   const brightnessCanvasRef = useRef(null);
   const fileInputRef = useRef(null);
   const isMountedRef = useRef(true);
+  
   const [error, setError] = useState(null);
   const [isLowLight, setIsLowLight] = useState(false);
   const [isTorchSupported, setIsTorchSupported] = useState(false);
@@ -25,6 +24,10 @@ function CameraScreen({ onCapture }) {
   const [isFrontCamera, setIsFrontCamera] = useState(false);
   const [isScreenLightOn, setIsScreenLightOn] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
+
+  // Centralized format presets states
+  const [selectedPresetId, setSelectedPresetId] = useState('freeform');
+  const [showShutterFlash, setShowShutterFlash] = useState(false);
 
   const stopStream = useCallback(() => {
     if (streamRef.current) {
@@ -62,8 +65,8 @@ function CameraScreen({ onCapture }) {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: facingMode },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 1920 }, // High-resolution target
+          height: { ideal: 1080 },
         },
         audio: false,
       });
@@ -143,7 +146,7 @@ function CameraScreen({ onCapture }) {
     };
   }, [startCamera, stopStream]);
 
-  // Brightness detection loop
+  // Brightness detection loop for twilight feedback
   useEffect(() => {
     const interval = setInterval(() => {
       const video = videoRef.current;
@@ -164,8 +167,8 @@ function CameraScreen({ onCapture }) {
         totalBrightness += (r + g + b) / 3;
       }
 
-      const avgBrightness = totalBrightness / 100; // 10x10 pixels
-      setIsLowLight(avgBrightness < 80);
+      const avgBrightness = totalBrightness / 100;
+      setIsLowLight(avgBrightness < 75); // Activated under dim lighting threshold
     }, 1000);
 
     return () => clearInterval(interval);
@@ -202,20 +205,21 @@ function CameraScreen({ onCapture }) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      onCapture(ev.target?.result, false);
+      onCapture(ev.target?.result, selectedPresetId, false);
     };
     reader.readAsDataURL(file);
     e.target.value = '';
   };
 
-  /**
-   * Captures the current video frame onto a canvas and converts to JPEG.
-   * Uses the native video resolution (videoWidth/videoHeight) so the
-   * captured image matches the actual camera output, not the CSS size.
-   */
   function handleCapture() {
     if (isCapturing) return;
     setIsCapturing(true);
+    
+    // Shutter white flash trigger
+    setShowShutterFlash(true);
+    setTimeout(() => {
+      setShowShutterFlash(false);
+    }, 150);
 
     try {
       const video = videoRef.current;
@@ -235,7 +239,8 @@ function CameraScreen({ onCapture }) {
         return;
       }
 
-      const MAX_WIDTH = 1400;
+      // Restrict max width for session preview load but preserve native sharp density
+      const MAX_WIDTH = 1920;
       if (width > MAX_WIDTH) {
         const scale = MAX_WIDTH / width;
         width = MAX_WIDTH;
@@ -252,57 +257,99 @@ function CameraScreen({ onCapture }) {
       }
       ctx.drawImage(video, 0, 0, width, height);
 
-      const imageData = canvas.toDataURL('image/jpeg', 0.95);
+      const imageData = canvas.toDataURL('image/jpeg', 0.96);
+      
+      // Reclaim memory immediately by zeroing canvas width/height
+      canvas.width = 0;
+      canvas.height = 0;
+
       stopStream();
-      onCapture(imageData, isLowLight);
+      onCapture(imageData, selectedPresetId, isLowLight);
     } catch (err) {
       console.error("Capture failed:", err);
       setIsCapturing(false);
     }
   }
 
+  // Calculate dynamic framing guide guides based on preset id
+  const getFrameDimensions = (presetId) => {
+    switch (presetId) {
+      case 'a4':
+        return { maxWidth: '280px', aspectRatio: '0.707', label: 'A4 Document' };
+      case 'letter':
+        return { maxWidth: '280px', aspectRatio: '0.773', label: 'US Letter' };
+      case 'id_card':
+        return { maxWidth: '320px', aspectRatio: '1.586', label: 'ID Card' };
+      case 'business_card':
+        return { maxWidth: '320px', aspectRatio: '1.75', label: 'Business Card' };
+      case 'receipt':
+        return { maxWidth: '210px', aspectRatio: '0.400', label: 'Thermal Receipt' };
+      case 'freeform':
+      default:
+        return { maxWidth: '290px', aspectRatio: '0.750', label: 'Freeform Crop' };
+    }
+  };
+
+  const frameDimensions = getFrameDimensions(selectedPresetId);
+
   if (error) {
     return (
-      <div style={{ padding: '2rem', fontFamily: 'system-ui, sans-serif' }}>
-        <h2>Camera</h2>
-        <p style={{ color: '#c00' }}>{error}</p>
+      <div style={{ padding: '2rem', fontFamily: 'system-ui, sans-serif', color: 'white', backgroundColor: '#000', minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
+        <h2 style={{ color: '#ff4444' }}>Camera Error</h2>
+        <p style={{ color: 'var(--color-text-dim)', maxWidth: '400px', marginBottom: '24px' }}>{error}</p>
+        <button className="btn-primary" onClick={() => window.location.reload()} style={{ maxWidth: '200px' }}>
+          Reload Page
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="camera-container">
-
-      {/* Screen Light Overlay */}
+    <div className="camera-container" style={{ touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}>
+      
+      {/* Screen Light Flash Overlay (Front Camera Capture Assist) */}
       {isFrontCamera && isScreenLightOn && (
         <div style={{
           position: 'absolute',
           top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'white',
-          opacity: 0.85,
+          backgroundColor: '#fff',
+          opacity: 0.9,
           zIndex: 10,
           pointerEvents: 'none'
         }} />
       )}
 
-      {/* Header controls */}
+      {/* Shutter White Flash Feedback */}
+      {showShutterFlash && (
+        <div style={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: '#ffffff',
+          zIndex: 100,
+          pointerEvents: 'none'
+        }} />
+      )}
+
+      {/* Top Header controls */}
       <div className="top-bar">
         {isTorchSupported && !isFrontCamera ? (
-          <button className={`icon-btn ${isTorchOn ? 'primary' : ''}`} onClick={toggleTorch}>
+          <button className={`icon-btn ${isTorchOn ? 'primary' : ''}`} onClick={toggleTorch} title="Toggle Flashlight">
             <span className="material-symbols-outlined">{isTorchOn ? 'flash_on' : 'flash_off'}</span>
           </button>
         ) : (
           <div style={{ width: 48 }} />
         )}
 
-        {isLowLight && (
-          <button className="icon-btn" style={{ color: 'var(--color-primary)' }}>
-            <span className="material-symbols-outlined">wb_twilight</span>
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {isLowLight && (
+            <button className="icon-btn" style={{ color: '#ffaa00', animation: 'pulse 2s infinite' }} title="Low-light detected">
+              <span className="material-symbols-outlined">wb_twilight</span>
+            </button>
+          )}
+        </div>
 
         {isFrontCamera ? (
-          <button className={`icon-btn ${isScreenLightOn ? 'primary' : ''}`} onClick={toggleScreenLight}>
+          <button className={`icon-btn ${isScreenLightOn ? 'primary' : ''}`} onClick={toggleScreenLight} title="Toggle Screen Light">
             <span className="material-symbols-outlined">{isScreenLightOn ? 'light_mode' : 'highlight'}</span>
           </button>
         ) : (
@@ -317,12 +364,69 @@ function CameraScreen({ onCapture }) {
         </div>
       )}
 
-      <div className="scanner-overlay">
-        <div className="scanner-frame">
-          <div className="corner corner-tl"></div>
-          <div className="corner corner-tr"></div>
-          <div className="corner corner-bl"></div>
-          <div className="corner corner-br"></div>
+      {/* Dynamic, format-aware alignment guide overlay */}
+      <div className="scanner-overlay" style={{ zIndex: 5 }}>
+        <div 
+          className="scanner-frame"
+          style={{
+            position: 'relative',
+            width: '100%',
+            maxWidth: frameDimensions.maxWidth,
+            aspectRatio: frameDimensions.aspectRatio,
+            border: isLowLight ? '2px solid #ffaa00' : '2px solid rgba(0, 255, 171, 0.85)',
+            boxShadow: '0 0 0 5000px rgba(0, 0, 0, 0.65)',
+            borderRadius: '12px',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          {/* Subtle center alignment crosshairs */}
+          <div style={{
+            width: '10px',
+            height: '10px',
+            border: isLowLight ? '1px solid rgba(255, 170, 0, 0.4)' : '1px solid rgba(0, 255, 171, 0.4)',
+            borderRadius: '50%',
+            position: 'absolute'
+          }} />
+          <div style={{
+            width: '1px',
+            height: '24px',
+            background: isLowLight ? 'rgba(255, 170, 0, 0.3)' : 'rgba(0, 255, 171, 0.3)',
+            position: 'absolute'
+          }} />
+          <div style={{
+            width: '24px',
+            height: '1px',
+            background: isLowLight ? 'rgba(255, 170, 0, 0.3)' : 'rgba(0, 255, 171, 0.3)',
+            position: 'absolute'
+          }} />
+
+          {/* Brackets styled with primary colors */}
+          <div className="corner corner-tl" style={{ borderColor: isLowLight ? '#ffaa00' : '' }} />
+          <div className="corner corner-tr" style={{ borderColor: isLowLight ? '#ffaa00' : '' }} />
+          <div className="corner corner-bl" style={{ borderColor: isLowLight ? '#ffaa00' : '' }} />
+          <div className="corner corner-br" style={{ borderColor: isLowLight ? '#ffaa00' : '' }} />
+
+          {/* Guide telemetry label */}
+          <div style={{
+            position: 'absolute',
+            bottom: '-28px',
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            color: isLowLight ? '#ffaa00' : 'var(--color-primary)',
+            fontSize: '10px',
+            fontWeight: 'bold',
+            padding: '4px 12px',
+            borderRadius: '12px',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            whiteSpace: 'nowrap'
+          }}>
+            {frameDimensions.label} Guide
+          </div>
         </div>
       </div>
 
@@ -332,6 +436,58 @@ function CameraScreen({ onCapture }) {
         playsInline
         muted
       />
+
+      {/* Dynamic Immersive Format Selector Pill Panel */}
+      <div style={{
+        position: 'absolute',
+        bottom: '120px',
+        left: 0,
+        right: 0,
+        display: 'flex',
+        justifyContent: 'center',
+        zIndex: 15,
+        padding: '0 24px'
+      }}>
+        <div style={{
+          display: 'flex',
+          gap: '6px',
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          padding: '4px',
+          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          backdropFilter: 'blur(16px)',
+          borderRadius: '24px',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          maxWidth: '100%',
+        }} className="format-presets-scrollbar">
+          {Object.values(FORMAT_PRESETS).map((preset) => {
+            const isActive = selectedPresetId === preset.id;
+            return (
+              <button
+                key={preset.id}
+                onClick={() => setSelectedPresetId(preset.id)}
+                style={{
+                  padding: '6px 14px',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  borderRadius: '20px',
+                  background: isActive ? 'var(--color-primary)' : 'transparent',
+                  color: isActive ? 'var(--color-on-primary)' : 'rgba(255, 255, 255, 0.75)',
+                  border: 'none',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                  cursor: 'pointer'
+                }}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Hidden canvases */}
       <canvas ref={canvasRef} style={{ display: 'none' }} />
@@ -346,9 +502,9 @@ function CameraScreen({ onCapture }) {
         onChange={handleFileSelect}
       />
 
-      {/* Bottom controls */}
+      {/* Bottom control bar */}
       <div className="bottom-bar">
-        <button className="icon-btn" onClick={() => fileInputRef.current?.click()}>
+        <button className="icon-btn" onClick={() => fileInputRef.current?.click()} title="Import from Gallery">
           <span className="material-symbols-outlined">photo_library</span>
         </button>
 
@@ -358,12 +514,12 @@ function CameraScreen({ onCapture }) {
               className="shutter-btn"
               onClick={handleCapture}
               disabled={isCapturing}
-              aria-label="Take photo"
+              aria-label="Shutter Button"
             />
           </div>
         </div>
 
-        <button className="icon-btn" onClick={toggleCamera} disabled={isCapturing}>
+        <button className="icon-btn" onClick={toggleCamera} disabled={isCapturing} title="Flip Camera">
           <span className="material-symbols-outlined">flip_camera_ios</span>
         </button>
       </div>

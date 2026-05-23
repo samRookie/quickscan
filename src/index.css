@@ -71,6 +71,9 @@ button:disabled {
   justify-content: center;
   align-items: center;
   overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .camera-container video {
@@ -344,27 +347,38 @@ button:disabled {
 .thumbnail {
   width: 64px;
   height: 84px;
-  border-radius: 4px;
+  border-radius: 6px;
   background-size: cover;
   background-position: center;
-  border: 2px solid transparent;
+  border: 2px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
   position: relative;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+
+.thumbnail:active {
+  transform: scale(0.94);
 }
 
 .thumbnail.active {
   border-color: var(--color-primary);
+  transform: scale(1.06);
+  box-shadow: 0 4px 14px rgba(0, 255, 171, 0.25);
 }
 
 .thumbnail-badge {
   position: absolute;
-  bottom: 0;
-  right: 0;
-  background: rgba(0,0,0,0.8);
-  color: var(--color-white);
-  font-size: 10px;
-  padding: 2px 4px;
-  border-top-left-radius: 4px;
+  bottom: 4px;
+  right: 4px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 700;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 /* Adjust screen — compact slider with large touch thumb */
@@ -412,4 +426,79 @@ button:disabled {
 .aspect-chip.active {
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+/* Hide scrollbar for the horizontal format presets selector scrollbar */
+.format-presets-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.format-presets-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Premium styling overrides for CropperJS handles and lines */
+.cropper-line {
+  background-color: var(--color-primary) !important;
+  opacity: 0.8 !important;
+}
+
+.cropper-point {
+  background-color: var(--color-primary) !important;
+  opacity: 1 !important;
+}
+
+/* Corner handles: larger, rounded, highly legible design */
+.cropper-point.point-se,
+.cropper-point.point-sw,
+.cropper-point.point-ne,
+.cropper-point.point-nw {
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+  border: 2px solid var(--color-white) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Side handles: sleek pill shape */
+.cropper-point.point-e,
+.cropper-point.point-w,
+.cropper-point.point-n,
+.cropper-point.point-s {
+  border-radius: 4px !important;
+  background-color: var(--color-primary) !important;
+  border: 1px solid var(--color-white) !important;
+}
+
+/* Expand touch accessibility target to 44x44px using pseudo-elements */
+.cropper-point::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 44px;
+  background: transparent;
+}
+
+/* Sleek semi-transparent dark mask overlay */
+.cropper-modal {
+  background-color: #000000 !important;
+  opacity: 0.65 !important;
+}
+
+.cropper-view-box {
+  outline: 2px solid var(--color-primary) !important;
+  outline-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.65) !important;
+}
+
+.cropper-dashed {
+  border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+.cropper-center::before,
+.cropper-center::after {
+  background-color: var(--color-primary) !important;
 }

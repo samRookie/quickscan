@@ -69,16 +69,17 @@ function App() {
    * Called by CameraScreen after a frame is captured.
    * Stores the base64 image and navigates to the adjust step.
    */
-  function handleCapture(imageData, isLowQuality = false) {
+  function handleCapture(imageData, presetId = 'freeform', isLowQuality = false) {
     setCapturedImages((prev) => {
       const newArray = [...prev];
       let rawScan;
+      const targetPreset = presetId || 'freeform';
       if (currentIndex < newArray.length) {
         rawScan = { ...newArray[currentIndex], original: imageData, cropped: null, enhanced: null, isLowQuality };
-        newArray[currentIndex] = attachFormatToScan(rawScan, 'freeform');
+        newArray[currentIndex] = attachFormatToScan(rawScan, targetPreset);
       } else {
         rawScan = { id: Date.now(), original: imageData, cropped: null, enhanced: null, isLowQuality };
-        newArray.push(attachFormatToScan(rawScan, 'freeform'));
+        newArray.push(attachFormatToScan(rawScan, targetPreset));
       }
       return newArray;
     });
@@ -167,6 +168,49 @@ function App() {
   }
 
   /**
+   * Called when a format preset is updated for the active scanned image.
+   * Preserves state of pages independently.
+   */
+  const handleFormatChange = useCallback((presetId) => {
+    setCapturedImages((prev) => {
+      const newArray = [...prev];
+      if (newArray[currentIndex]) {
+        newArray[currentIndex] = attachFormatToScan(newArray[currentIndex], presetId);
+      }
+      return newArray;
+    });
+  }, [currentIndex]);
+
+  /**
+   * Triggers rescanning / replacing the current scanned page at the given index.
+   * Switches to the camera screen while preserving the target replacement index.
+   */
+  const handleReplacePage = useCallback((index) => {
+    setCurrentIndex(index);
+    setCurrentStep(STEPS.CAMERA);
+  }, []);
+
+  /**
+   * Safely swaps page scan indexes in the session pipeline.
+   * Isolates states per page and maintains index selection.
+   */
+  const handleReorderPage = useCallback((index, direction) => {
+    setCapturedImages((prev) => {
+      if (index < 0 || index >= prev.length) return prev;
+      const targetIndex = direction === 'left' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+
+      const newArray = [...prev];
+      const temp = newArray[index];
+      newArray[index] = newArray[targetIndex];
+      newArray[targetIndex] = temp;
+
+      setCurrentIndex(targetIndex);
+      return newArray;
+    });
+  }, []);
+
+  /**
    * Renders the active screen component based on current workflow step.
    */
   function renderScreen() {
@@ -180,12 +224,16 @@ function App() {
             image={activeOriginal}
             allImages={capturedImages}
             currentIndex={currentIndex}
+            activeDocument={activeDocument}
             isLowQuality={activeDocument?.isLowQuality}
             onSelectImage={(index) => setCurrentIndex(index)}
             onRemove={handleRemoveImage}
+            onReorder={handleReorderPage}
+            onReplace={handleReplacePage}
             onScanMore={handleScanMore}
             onBack={handleRetake}
             onDone={handleCropDone}
+            onFormatChange={handleFormatChange}
           />
         );
 
@@ -199,6 +247,8 @@ function App() {
             currentIndex={currentIndex}
             onSelectImage={(index) => setCurrentIndex(index)}
             onRemove={handleRemoveImage}
+            onReorder={handleReorderPage}
+            onReplace={handleReplacePage}
             onScanMore={handleScanMore}
             onBack={() => setCurrentStep(STEPS.ADJUST)}
             onDone={handleEnhanceDone}
@@ -212,6 +262,8 @@ function App() {
             currentIndex={currentIndex}
             onSelectImage={(index) => setCurrentIndex(index)}
             onRemove={handleRemoveImage}
+            onReorder={handleReorderPage}
+            onReplace={handleReplacePage}
             onScanMore={handleScanMore}
             onBack={() => setCurrentStep(STEPS.ENHANCE)}
             onFinish={clearSession}

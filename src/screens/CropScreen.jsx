@@ -2,29 +2,69 @@ import { useRef, useEffect, useState } from 'react';
 import Cropper from 'cropperjs';
 import 'cropperjs/dist/cropper.css';
 import ThumbnailStrip from '../components/ThumbnailStrip';
+import { FORMAT_PRESETS, DEFAULT_FORMAT_PRESET } from '../config/formatPresets.js';
+import { getFormatPresetById, getAspectRatioForPreset } from '../utils/formatUtils.js';
 
-function CropScreen({ image, allImages, currentIndex, isLowQuality, onSelectImage, onRemove, onScanMore, onBack, onDone }) {
+function CropScreen({
+  image,
+  allImages,
+  currentIndex,
+  activeDocument,
+  isLowQuality,
+  onSelectImage,
+  onRemove,
+  onReorder,
+  onReplace,
+  onScanMore,
+  onBack,
+  onDone,
+  onFormatChange
+}) {
   const imageRef = useRef(null);
   const cropperRef = useRef(null);
   const [isCropping, setIsCropping] = useState(false);
   const [rotationCount, setRotationCount] = useState(0);
   const [straightenAngle, setStraightenAngle] = useState(0);
-  const [selectedAspect, setSelectedAspect] = useState('free');
+
+  // Sourcing the current format preset directly from the active document state
+  const activePreset = activeDocument?.format
+    ? getFormatPresetById(activeDocument.format.presetId)
+    : DEFAULT_FORMAT_PRESET;
 
   useEffect(() => {
     if (!imageRef.current || !image) return;
 
     setRotationCount(0);
     setStraightenAngle(0);
-    setSelectedAspect('free');
+
+    // Calculate aspect ratio safely with preset system fallback
+    let initialRatio = NaN;
+    try {
+      const presetRatio = getAspectRatioForPreset(activePreset);
+      if (presetRatio !== null && !isNaN(presetRatio) && presetRatio > 0) {
+        initialRatio = presetRatio;
+      }
+    } catch (e) {
+      console.warn('[CropScreen] Error resolving initial aspect ratio, falling back to NaN:', e);
+    }
 
     const timer = setTimeout(() => {
       cropperRef.current = new Cropper(imageRef.current, {
         responsive: true,
         viewMode: 1,
         background: false,
-        autoCropArea: 1,
+        autoCropArea: 0.92, // Pads the crop box so handles are easy to grab without running off the screen edges
         dragMode: 'move',
+        aspectRatio: initialRatio,
+        zoomOnTouch: true,
+        zoomOnWheel: false, // Prevent page scrolling conflicts on desktop
+        toggleDragModeOnDblclick: false, // Prevent accidental double-tap mode toggling on mobile
+        checkOrientation: false, // Avoid conflicts with our custom rotation engine
+        guides: true,
+        center: true,
+        highlight: true,
+        cropBoxMovable: true,
+        cropBoxResizable: true,
       });
     }, 100);
 
@@ -44,13 +84,21 @@ function CropScreen({ image, allImages, currentIndex, isLowQuality, onSelectImag
     setIsCropping(true);
 
     try {
+      // Diagnostic logs to verify natural resolution preservation
+      const originalWidth = imageRef.current?.naturalWidth || 0;
+      const originalHeight = imageRef.current?.naturalHeight || 0;
+      console.log(`[CropScreen] Source natural dimensions: ${originalWidth}x${originalHeight}`);
+
       const canvas = cropper.getCroppedCanvas({
         imageSmoothingEnabled: true,
         imageSmoothingQuality: 'high'
       });
+      
       if (!canvas) {
         throw new Error('No crop area is available.');
       }
+
+      console.log(`[CropScreen] Cropped canvas natural size: ${canvas.width}x${canvas.height}`);
 
       const croppedImage = canvas.toDataURL('image/jpeg', 1.0);
       onDone(croppedImage);
@@ -85,17 +133,21 @@ function CropScreen({ image, allImages, currentIndex, isLowQuality, onSelectImag
     applyRotation(rotationCount, angle);
   };
 
-  const handleAspectFree = () => {
-    if (cropperRef.current) {
-      cropperRef.current.setAspectRatio(NaN);
-      setSelectedAspect('free');
-    }
-  };
+  const handlePresetSelect = (presetId) => {
+    try {
+      const targetPreset = getFormatPresetById(presetId);
+      const targetRatio = getAspectRatioForPreset(targetPreset);
+      const cropperRatio = (targetRatio === null || isNaN(targetRatio)) ? NaN : targetRatio;
 
-  const handleAspectA4 = () => {
-    if (cropperRef.current) {
-      cropperRef.current.setAspectRatio(1 / 1.414);
-      setSelectedAspect('a4');
+      if (cropperRef.current) {
+        cropperRef.current.setAspectRatio(cropperRatio);
+      }
+
+      if (onFormatChange) {
+        onFormatChange(presetId);
+      }
+    } catch (err) {
+      console.error('[CropScreen] Failed to set format preset:', err);
     }
   };
 
@@ -105,6 +157,10 @@ function CropScreen({ image, allImages, currentIndex, isLowQuality, onSelectImag
       cropper.reset();
       setRotationCount(0);
       setStraightenAngle(0);
+      
+      // Reset aspect ratio to current active format aspect ratio
+      const currentRatio = getAspectRatioForPreset(activePreset);
+      cropper.setAspectRatio((currentRatio === null || isNaN(currentRatio)) ? NaN : currentRatio);
     }
   }
 
@@ -131,7 +187,20 @@ function CropScreen({ image, allImages, currentIndex, isLowQuality, onSelectImag
       </div>
 
       <div className="content-area" style={{ padding: '0 24px' }}>
-        <div style={{ width: '100%', maxWidth: '800px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <div 
+          style={{ 
+            width: '100%', 
+            maxWidth: '800px', 
+            flex: 1, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            justifyContent: 'center',
+            touchAction: 'none', // Prevents body scroll leakage during crop manipulation
+            userSelect: 'none',  // Prevents accidental text selection highlights
+            WebkitUserSelect: 'none'
+          }}
+          className="cropper-wrapper-outer"
+        >
           <img
             ref={imageRef}
             src={image}
@@ -140,7 +209,7 @@ function CropScreen({ image, allImages, currentIndex, isLowQuality, onSelectImag
               display: 'block',
               width: '100%',
               height: 'auto',
-              maxHeight: '60vh'
+              maxHeight: '55vh'
             }}
           />
         </div>
@@ -151,31 +220,22 @@ function CropScreen({ image, allImages, currentIndex, isLowQuality, onSelectImag
           </div>
         )}
 
-        <div style={{ width: '100%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap' }}>
-            <button className="icon-btn" onClick={handleRotateLeft} style={{ flexShrink: 0 }}>
-              <span className="material-symbols-outlined">rotate_left</span>
-            </button>
-            <button className="icon-btn" onClick={handleRotateRight} style={{ flexShrink: 0 }}>
-              <span className="material-symbols-outlined">rotate_right</span>
-            </button>
-            <button className="icon-btn" onClick={handleReset} style={{ flexShrink: 0 }}>
-              <span className="material-symbols-outlined">restart_alt</span>
-            </button>
-            <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.06)', flexShrink: 0 }} />
-            <button
-              className={`aspect-chip ${selectedAspect === 'free' ? 'active' : ''}`}
-              onClick={handleAspectFree}
-            >
-              Free
-            </button>
-            <button
-              className={`aspect-chip ${selectedAspect === 'a4' ? 'active' : ''}`}
-              onClick={handleAspectA4}
-            >
-              A4
-            </button>
-            <div style={{ flex: 1, minWidth: '60px', padding: '0 4px' }}>
+        <div style={{ width: '100%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {/* Action and utility row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap', justifyContent: 'space-between', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button className="icon-btn" onClick={handleRotateLeft} style={{ flexShrink: 0 }} title="Rotate Left">
+                <span className="material-symbols-outlined">rotate_left</span>
+              </button>
+              <button className="icon-btn" onClick={handleRotateRight} style={{ flexShrink: 0 }} title="Rotate Right">
+                <span className="material-symbols-outlined">rotate_right</span>
+              </button>
+              <button className="icon-btn" onClick={handleReset} style={{ flexShrink: 0 }} title="Reset Adjustments">
+                <span className="material-symbols-outlined">restart_alt</span>
+              </button>
+            </div>
+            
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '8px', minWidth: 0 }}>
               <input
                 type="range"
                 className="adjust-slider"
@@ -184,12 +244,48 @@ function CropScreen({ image, allImages, currentIndex, isLowQuality, onSelectImag
                 step="0.5"
                 value={straightenAngle}
                 onChange={handleStraighten}
-                style={{ width: '100%' }}
+                style={{ width: '100%', flex: 1 }}
               />
+              <span style={{ fontSize: '11px', color: 'var(--color-text-dim)', minWidth: '28px', textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                {straightenAngle}°
+              </span>
             </div>
-            <span style={{ fontSize: '11px', color: 'var(--color-text-dim)', minWidth: '24px', textAlign: 'center', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-              {straightenAngle}°
-            </span>
+          </div>
+
+          {/* Dynamic, responsive format presets scrolling selector */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            overflowX: 'auto',
+            padding: '6px 0',
+            width: '100%',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none'
+          }} className="format-presets-scrollbar">
+            {Object.values(FORMAT_PRESETS).map((preset) => {
+              const isActive = activePreset.id === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  className={`aspect-chip ${isActive ? 'active' : ''}`}
+                  onClick={() => handlePresetSelect(preset.id)}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '11px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    borderRadius: '20px',
+                    background: isActive ? 'rgba(0, 255, 171, 0.1)' : 'var(--color-surface)',
+                    borderColor: isActive ? 'var(--color-primary)' : 'rgba(255, 255, 255, 0.08)',
+                    transition: 'all 0.2s ease',
+                    flexShrink: 0
+                  }}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
           </div>
 
           <ThumbnailStrip
@@ -197,9 +293,12 @@ function CropScreen({ image, allImages, currentIndex, isLowQuality, onSelectImag
             currentIndex={currentIndex}
             onSelectImage={onSelectImage}
             onScanMore={onScanMore}
+            onRemove={onRemove}
+            onReorder={onReorder}
+            onReplace={onReplace}
           />
 
-          <button className="btn-primary" onClick={handleCrop} disabled={isCropping} style={{ marginTop: '4px' }}>
+          <button className="btn-primary" onClick={handleCrop} disabled={isCropping} style={{ marginTop: '2px' }}>
             {isCropping ? 'Processing...' : 'Continue'}
           </button>
         </div>

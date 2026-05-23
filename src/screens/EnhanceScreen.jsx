@@ -1,7 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import ThumbnailStrip from '../components/ThumbnailStrip';
 
-function EnhanceScreen({ image, initialEnhanced, initialFilter, allImages, currentIndex, onSelectImage, onRemove, onScanMore, onBack, onDone }) {
+function EnhanceScreen({
+  image,
+  initialEnhanced,
+  initialFilter,
+  allImages,
+  currentIndex,
+  onSelectImage,
+  onRemove,
+  onReorder,
+  onReplace,
+  onScanMore,
+  onBack,
+  onDone
+}) {
   const [filters, setFilters] = useState(
     initialEnhanced || { original: image, grayscale: null, document: null }
   );
@@ -9,18 +22,17 @@ function EnhanceScreen({ image, initialEnhanced, initialFilter, allImages, curre
   const [isProcessing, setIsProcessing] = useState(false);
   const canvasRef = useRef(null);
 
-  // Sync state when active page/image changes to prevent visual bleed from previous image
-  useEffect(() => {
-    if (initialEnhanced) {
-      setFilters(initialEnhanced);
-    } else {
-      setFilters({ original: image, grayscale: null, document: null });
-    }
+  const [prevImage, setPrevImage] = useState(image);
+
+  if (image !== prevImage) {
+    setPrevImage(image);
+    setFilters(initialEnhanced || { original: image, grayscale: null, document: null });
     setSelectedFilter(initialFilter || 'original');
-  }, [image, initialEnhanced, initialFilter]);
+  }
 
   useEffect(() => {
     let isMounted = true;
+    const canvasEl = canvasRef.current;
 
     if (filters.document && filters.grayscale && filters.original === image) {
       return;
@@ -37,16 +49,15 @@ function EnhanceScreen({ image, initialEnhanced, initialFilter, allImages, curre
       img.onload = () => {
         if (!isMounted) return;
 
-        const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvasEl) return;
 
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        canvas.width = img.width;
-        canvas.height = img.height;
+        const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
+        canvasEl.width = img.width;
+        canvasEl.height = img.height;
 
         ctx.drawImage(img, 0, 0);
 
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
         const data = imageData.data;
 
         const grayData = new Uint8ClampedArray(data);
@@ -77,11 +88,11 @@ function EnhanceScreen({ image, initialEnhanced, initialFilter, allImages, curre
           docData[i + 3] = data[i + 3];
         }
 
-        ctx.putImageData(new ImageData(grayData, canvas.width, canvas.height), 0, 0);
-        const grayscaleDataUrl = canvas.toDataURL('image/jpeg', 1.0);
+        ctx.putImageData(new ImageData(grayData, canvasEl.width, canvasEl.height), 0, 0);
+        const grayscaleDataUrl = canvasEl.toDataURL('image/jpeg', 1.0);
 
-        ctx.putImageData(new ImageData(docData, canvas.width, canvas.height), 0, 0);
-        const documentDataUrl = canvas.toDataURL('image/jpeg', 1.0);
+        ctx.putImageData(new ImageData(docData, canvasEl.width, canvasEl.height), 0, 0);
+        const documentDataUrl = canvasEl.toDataURL('image/jpeg', 1.0);
 
         if (isMounted) {
           setFilters({
@@ -92,8 +103,8 @@ function EnhanceScreen({ image, initialEnhanced, initialFilter, allImages, curre
           setIsProcessing(false);
 
           // Zero out canvas size to immediately release GPU backing memory
-          canvas.width = 0;
-          canvas.height = 0;
+          canvasEl.width = 0;
+          canvasEl.height = 0;
         }
       };
       img.src = image;
@@ -104,10 +115,9 @@ function EnhanceScreen({ image, initialEnhanced, initialFilter, allImages, curre
     return () => {
       isMounted = false;
       clearTimeout(processingTimer);
-      const canvas = canvasRef.current;
-      if (canvas) {
-        canvas.width = 0;
-        canvas.height = 0;
+      if (canvasEl) {
+        canvasEl.width = 0;
+        canvasEl.height = 0;
       }
     };
   }, [image, filters.document, filters.grayscale, filters.original]);
@@ -180,6 +190,9 @@ function EnhanceScreen({ image, initialEnhanced, initialFilter, allImages, curre
             currentIndex={currentIndex}
             onSelectImage={onSelectImage}
             onScanMore={onScanMore}
+            onRemove={onRemove}
+            onReorder={onReorder}
+            onReplace={onReplace}
           />
 
           <button className="btn-primary" onClick={handleDone} disabled={isProcessing}>
