@@ -1,5 +1,14 @@
 # QuickScan 📄✨
 
+<div align="center">
+
+[![React](https://img.shields.io/badge/React-19.2.6-%2320232a?style=flat&logo=react&logoColor=%2361DAFB)](https://react.dev)
+[![Vite](https://img.shields.io/badge/Vite-8.0.12-%2320232a?style=flat&logo=vite&logoColor=%23646CFF)](https://vite.dev)
+[![PWA](https://img.shields.io/badge/PWA-Active-%2320232a?style=flat&logo=progressive-web-apps&logoColor=%2300FFAB)](https://vite-pwa-org.netlify.app/)
+[![Privacy](https://img.shields.io/badge/Privacy-100%25_Local-%2300FFAB?style=flat&logo=security&logoColor=%230c1510)](#-privacy--security)
+
+</div>
+
 **QuickScan** is a high-performance, privacy-first, and local-only web-based document scanner. Designed as a progressive mobile-first application, it transforms raw camera captures into aligned, enhanced, and professionally formatted PDF documents entirely within the client browser.
 
 ---
