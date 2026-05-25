@@ -365,7 +365,7 @@ function CameraScreen({ onCapture }) {
       )}
 
       {/* Dynamic, format-aware alignment guide overlay */}
-      <div className="scanner-overlay" style={{ zIndex: 5 }}>
+      <div className="scanner-overlay" style={{ zIndex: 5, paddingTop: '72px', paddingBottom: '180px' }}>
         <div 
           className="scanner-frame"
           style={{
@@ -374,7 +374,7 @@ function CameraScreen({ onCapture }) {
             maxWidth: frameDimensions.maxWidth,
             aspectRatio: frameDimensions.aspectRatio,
             border: isLowLight ? '2px solid #ffaa00' : '2px solid rgba(0, 255, 171, 0.85)',
-            boxShadow: '0 0 0 5000px rgba(0, 0, 0, 0.65)',
+            boxShadow: '0 0 0 5000px rgba(0, 0, 0, 0.55)',
             borderRadius: '12px',
             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             display: 'flex',
@@ -437,29 +437,35 @@ function CameraScreen({ onCapture }) {
         muted
       />
 
-      {/* Dynamic Immersive Format Selector Pill Panel */}
-      <div style={{
-        position: 'absolute',
-        bottom: '120px',
-        left: 0,
-        right: 0,
-        display: 'flex',
-        justifyContent: 'center',
-        zIndex: 15,
-        padding: '0 24px'
-      }}>
+      {/* Hidden canvases */}
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
+      <canvas ref={brightnessCanvasRef} width={10} height={10} style={{ display: 'none' }} />
+
+      {/* Hidden file input for gallery import */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleFileSelect}
+      />
+
+      {/* Bottom control bar — format presets + shutter controls stacked in one panel */}
+      <div className="bottom-bar">
+        {/* Format preset selector — always visible above the shutter row */}
         <div style={{
           display: 'flex',
           gap: '6px',
           overflowX: 'auto',
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
-          padding: '4px',
-          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          padding: '2px 4px',
+          backgroundColor: 'rgba(255, 255, 255, 0.06)',
           backdropFilter: 'blur(16px)',
           borderRadius: '24px',
           border: '1px solid rgba(255, 255, 255, 0.08)',
-          maxWidth: '100%',
+          width: '100%',
+          maxWidth: '420px',
         }} className="format-presets-scrollbar">
           {Object.values(FORMAT_PRESETS).map((preset) => {
             const isActive = selectedPresetId === preset.id;
@@ -468,6 +474,7 @@ function CameraScreen({ onCapture }) {
                 key={preset.id}
                 onClick={() => setSelectedPresetId(preset.id)}
                 style={{
+                  flex: '0 0 auto',
                   padding: '6px 14px',
                   fontSize: '11px',
                   fontWeight: '700',
@@ -487,41 +494,28 @@ function CameraScreen({ onCapture }) {
             );
           })}
         </div>
-      </div>
 
-      {/* Hidden canvases */}
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
-      <canvas ref={brightnessCanvasRef} width={10} height={10} style={{ display: 'none' }} />
+        {/* Shutter + utility controls row */}
+        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', width: '100%' }}>
+          <button className="icon-btn" onClick={() => fileInputRef.current?.click()} title="Import from Gallery">
+            <span className="material-symbols-outlined">photo_library</span>
+          </button>
 
-      {/* Hidden file input for gallery import */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={handleFileSelect}
-      />
-
-      {/* Bottom control bar */}
-      <div className="bottom-bar">
-        <button className="icon-btn" onClick={() => fileInputRef.current?.click()} title="Import from Gallery">
-          <span className="material-symbols-outlined">photo_library</span>
-        </button>
-
-        <div className="shutter-wrapper">
-          <div className="shutter-ring">
-            <button
-              className="shutter-btn"
-              onClick={handleCapture}
-              disabled={isCapturing}
-              aria-label="Shutter Button"
-            />
+          <div className="shutter-wrapper">
+            <div className="shutter-ring">
+              <button
+                className="shutter-btn"
+                onClick={handleCapture}
+                disabled={isCapturing}
+                aria-label="Shutter Button"
+              />
+            </div>
           </div>
-        </div>
 
-        <button className="icon-btn" onClick={toggleCamera} disabled={isCapturing} title="Flip Camera">
-          <span className="material-symbols-outlined">flip_camera_ios</span>
-        </button>
+          <button className="icon-btn" onClick={toggleCamera} disabled={isCapturing} title="Flip Camera">
+            <span className="material-symbols-outlined">flip_camera_ios</span>
+          </button>
+        </div>
       </div>
     </div>
   );

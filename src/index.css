@@ -1,4 +1,3 @@
-
 :root {
   --color-bg: #0c1510;
   --color-surface: #18221c;
@@ -23,8 +22,13 @@ html, body {
   background-color: #000000;
   color: var(--color-text);
   font-family: var(--font-inter);
-  min-height: 100vh;
-  min-height: 100dvh;
+  /* Use 100% height so the app-container can fill the real visible viewport.
+     100dvh adapts to mobile browser chrome (address bar showing/hiding).
+     overflow: hidden prevents the page-level scroll that was making the
+     app feel "stretched" on mobile. */
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
   user-select: none;
@@ -56,10 +60,12 @@ button:disabled {
 .app-container {
   width: 100%;
   max-width: 100vw;
-  min-height: 100vh;
+  height: 100%;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   position: relative;
+  overflow: hidden;
 }
 
 /* Fullscreen Camera */
@@ -105,11 +111,13 @@ button:disabled {
   left: 0;
   width: 100%;
   display: flex;
-  justify-content: space-around;
+  flex-direction: column;
   align-items: center;
-  padding: 32px 32px 48px;
+  gap: 10px;
+  /* Top padding + bottom padding that respects iOS home indicator / Android nav bar */
+  padding: 12px 32px calc(20px + env(safe-area-inset-bottom, 0px));
   z-index: 50;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
@@ -183,12 +191,9 @@ button:disabled {
   pointer-events: none;
 }
 
+/* The scanner frame is sized by JSX inline styles (maxWidth + aspectRatio)
+   and centred by the flex scanner-overlay. Only keep decorative properties here. */
 .scanner-frame {
-  position: absolute;
-  top: 80px;
-  bottom: 140px;
-  left: 20px;
-  right: 20px;
   border: 2px solid rgba(0, 255, 171, 0.6);
   border-radius: 8px;
   box-shadow: 0 0 0 5000px rgba(0, 0, 0, 0.4);
@@ -247,7 +252,10 @@ button:disabled {
 
 /* Secondary Screens */
 .screen-container {
-  min-height: 100vh;
+  /* Exactly fill the real visible viewport — no page-level scroll */
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
   background-color: var(--color-bg);
   color: var(--color-text);
   display: flex;
@@ -272,12 +280,17 @@ button:disabled {
 
 .content-area {
   flex: 1;
+  /* min-height: 0 is required for flex children to shrink and scroll internally
+     instead of pushing the page taller than the viewport */
+  min-height: 0;
   padding: 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   position: relative;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Buttons */
@@ -813,5 +826,3 @@ button:disabled {
     bottom: calc(88px + env(safe-area-inset-bottom)) !important;
   }
 }
-
-
