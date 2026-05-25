@@ -110,9 +110,34 @@ function CropScreen({
   }
 
   const applyRotation = (count, angle) => {
-    if (cropperRef.current) {
-      cropperRef.current.rotateTo((count * 90) + angle);
-    }
+    if (!cropperRef.current) return;
+    const cropper = cropperRef.current;
+
+    const totalAngle = (count * 90) + angle;
+    cropper.rotateTo(totalAngle);
+
+    // BUG FIX: After rotateTo(), Cropper.js keeps the same zoom level but the
+    // image's visual dimensions swap on 90°/270° rotations (portrait ↔ landscape).
+    // This causes the image to overflow its container and appear zoomed/clipped.
+    // Solution: recalculate the zoom to fit the rotated image inside the container.
+    const containerData = cropper.getContainerData();
+    const imageData    = cropper.getImageData();
+
+    // Determine if width/height are visually swapped after this rotation
+    const normalizedAngle = ((totalAngle % 360) + 360) % 360;
+    const isSwapped = (normalizedAngle > 45 && normalizedAngle < 135) ||
+                      (normalizedAngle > 225 && normalizedAngle < 315);
+
+    const fitW = isSwapped ? imageData.naturalHeight : imageData.naturalWidth;
+    const fitH = isSwapped ? imageData.naturalWidth  : imageData.naturalHeight;
+
+    // 0.9 gives a small padding margin so the image doesn't touch the container edge
+    const fitZoom = Math.min(
+      (containerData.width  * 0.9) / fitW,
+      (containerData.height * 0.9) / fitH
+    );
+
+    cropper.zoomTo(fitZoom);
   };
 
   const handleRotateLeft = () => {
