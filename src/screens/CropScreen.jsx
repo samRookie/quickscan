@@ -75,7 +75,7 @@ function CropScreen({
         cropperRef.current = null;
       }
     };
-  }, [image]);
+  }, [image, activePreset]);
 
   async function handleCrop() {
     const cropper = cropperRef.current;

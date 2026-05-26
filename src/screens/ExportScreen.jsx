@@ -26,6 +26,7 @@ function ExportScreen({
   const [pdfError, setPdfError] = useState(null);
   const [fileName, setFileName] = useState(`QuickScan_Document`);
   const [retryCount, setRetryCount] = useState(0);
+  const [shareNotice, setShareNotice] = useState(false);
   const blobUrlRef = useRef(null);
 
   useEffect(() => {
@@ -71,6 +72,14 @@ function ExportScreen({
       }
     };
   }, [allImages, retryCount]);
+
+  useEffect(() => {
+    if (!shareNotice) return;
+    const timer = setTimeout(() => {
+      setShareNotice(false);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [shareNotice]);
 
   const handleDownload = async () => {
     if (!pdfBlob) return;
@@ -128,7 +137,7 @@ function ExportScreen({
         console.error("Error sharing:", err);
       }
     } else {
-      alert("Sharing is not supported on this device or browser. Downloading instead.");
+      setShareNotice(true);
       handleDownload();
     }
   };
@@ -201,6 +210,12 @@ function ExportScreen({
                     <span className="material-symbols-outlined">download</span> Download
                   </button>
                 </div>
+
+                {shareNotice && (
+                  <div className="inline-notice" role="status" aria-live="polite">
+                    Sharing is not supported here, so the PDF download started instead.
+                  </div>
+                )}
 
                 <ThumbnailStrip
                   allImages={allImages}

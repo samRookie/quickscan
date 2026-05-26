@@ -23,10 +23,10 @@ export function getExportPageDimensions(scan, imgWidth, imgHeight) {
 
   const imageRatio = (imgWidth && imgHeight) ? imgWidth / imgHeight : 1; // width / height
 
-  let width = 210; // Default fallback (A4 width)
-  let height = 297; // Default fallback (A4 height)
-  let orientation = 'portrait';
-  let margin = 0; // Default margin in mm
+  let width;
+  let height;
+  let orientation;
+  let margin;
 
   switch (preset.id) {
     case 'a4':

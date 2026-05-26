@@ -550,7 +550,7 @@ button:disabled {
   scrollbar-width: none;  /* Firefox */
 }
 
-/* Premium styling overrides for CropperJS handles and lines */
+/* Styling overrides for CropperJS handles and lines */
 .cropper-line {
   background-color: var(--color-primary) !important;
   opacity: 0.8 !important;
@@ -616,7 +616,7 @@ button:disabled {
   background-color: var(--color-primary) !important;
 }
 
-/* Premium PWA Update Toast Styles */
+/* PWA Update Toast Styles */
 .update-toast {
   position: fixed;
   bottom: 24px;
@@ -744,7 +744,7 @@ button:disabled {
   border-style: dotted !important;
 }
 
-/* Premium Glassmorphic Undo Banner Style Rules */
+/* Glassmorphic Undo Banner Style Rules */
 .undo-banner {
   position: fixed;
   bottom: 24px;
@@ -817,12 +817,92 @@ button:disabled {
   background-color: #00e095;
 }
 
+.session-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  right: 24px;
+  max-width: 420px;
+  margin: 0 auto;
+  background: rgba(24, 34, 28, 0.9);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  z-index: 1010;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 255, 171, 0.08);
+  animation: banner-slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.session-toast-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.session-toast-icon {
+  color: var(--color-primary);
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.session-toast-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-white);
+  line-height: 1.35;
+}
+
+.session-toast-btn {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: var(--color-white);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.session-toast-btn:active {
+  transform: scale(0.95);
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.inline-notice {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 255, 171, 0.08);
+  border: 1px solid rgba(0, 255, 171, 0.16);
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+}
+
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .undo-banner {
     bottom: calc(24px + env(safe-area-inset-bottom));
   }
+  .session-toast {
+    bottom: calc(24px + env(safe-area-inset-bottom));
+  }
   /* Offset update-toast if undo-banner is visible */
   .undo-banner ~ .update-toast {
+    bottom: calc(88px + env(safe-area-inset-bottom)) !important;
+  }
+  .session-toast ~ .update-toast {
     bottom: calc(88px + env(safe-area-inset-bottom)) !important;
   }
 }

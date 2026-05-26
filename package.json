@@ -1,13 +1,13 @@
 {
   "name": "quickscan",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "prebuild": "npm audit --audit-level=high",
+    "audit:security": "npm audit --audit-level=high",
     "preview": "vite preview"
   },
   "dependencies": {

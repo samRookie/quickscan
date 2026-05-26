@@ -38,12 +38,14 @@ function App() {
   const [capturedImages, setCapturedImages] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [deletedBuffer, setDeletedBuffer] = useState(null);
+  const [sessionNotice, setSessionNotice] = useState(false);
 
   // Clear session to ensure data privacy
   const clearSession = useCallback(() => {
     setCapturedImages([]);
     setCurrentIndex(0);
     setDeletedBuffer(null);
+    setSessionNotice(false);
     setCurrentStep(STEPS.CAMERA);
   }, []);
 
@@ -55,6 +57,15 @@ function App() {
     }, 6000);
     return () => clearTimeout(timer);
   }, [deletedBuffer]);
+
+  // Auto-dismiss privacy notice without blocking the runtime
+  useEffect(() => {
+    if (!sessionNotice) return;
+    const timer = setTimeout(() => {
+      setSessionNotice(false);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [sessionNotice]);
 
   // Asynchronous thumbnail generation pipeline to compress images to tiny ~5-10KB previews
   const generateAndStoreThumbnail = useCallback((index, sourceImage) => {
@@ -94,7 +105,7 @@ function App() {
       timeout = setTimeout(() => {
         if (capturedImages.length > 0) {
           clearSession();
-          alert('Session expired due to inactivity. Images cleared for privacy.');
+          setSessionNotice(true);
         }
       }, 15 * 60 * 1000);
     };
@@ -390,13 +401,25 @@ function App() {
         </div>
       )}
 
+      {sessionNotice && (
+        <div className="session-toast" role="status" aria-live="polite">
+          <div className="session-toast-content">
+            <span className="material-symbols-outlined session-toast-icon">lock_reset</span>
+            <span className="session-toast-text">Session expired. Images were cleared for privacy.</span>
+          </div>
+          <button className="session-toast-btn" onClick={() => setSessionNotice(false)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {needRefresh && (
         <div className="update-toast" role="alert" aria-live="assertive">
           <div className="update-toast-content">
             <span className="material-symbols-outlined update-toast-icon">system_update_alt</span>
             <div className="update-toast-text">
               <h4 className="update-toast-title">Update Available</h4>
-              <p className="update-toast-desc">A new premium version of QuickScan is ready.</p>
+              <p className="update-toast-desc">A new version of QuickScan is ready.</p>
             </div>
           </div>
           <div className="update-toast-actions">

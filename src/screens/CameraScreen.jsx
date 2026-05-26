@@ -226,7 +226,6 @@ function CameraScreen({ onCapture }) {
       const canvas = canvasRef.current;
 
       if (!video || !canvas) {
-        setIsCapturing(false);
         return;
       }
 
@@ -235,7 +234,6 @@ function CameraScreen({ onCapture }) {
 
       if (width === 0 || height === 0) {
         console.warn('[CameraScreen] Video not ready yet — dimensions are 0');
-        setIsCapturing(false);
         return;
       }
 
@@ -252,7 +250,6 @@ function CameraScreen({ onCapture }) {
 
       const ctx = canvas.getContext('2d');
       if (!ctx) {
-        setIsCapturing(false);
         return;
       }
       ctx.drawImage(video, 0, 0, width, height);
@@ -267,7 +264,10 @@ function CameraScreen({ onCapture }) {
       onCapture(imageData, selectedPresetId, isLowLight);
     } catch (err) {
       console.error("Capture failed:", err);
-      setIsCapturing(false);
+    } finally {
+      if (isMountedRef.current) {
+        setIsCapturing(false);
+      }
     }
   }
 

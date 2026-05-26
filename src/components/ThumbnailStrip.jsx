@@ -18,12 +18,12 @@ function ThumbnailStrip({
 
   // Lightweight HTML5 drag-and-drop sorting variables
   const draggedIndexRef = useRef(null);
+  const [draggingIndex, setDraggingIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
 
   function handleDragStart(e, index) {
     draggedIndexRef.current = index;
-    setIsDragging(true);
+    setDraggingIndex(index);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', index);
   }
@@ -40,8 +40,8 @@ function ThumbnailStrip({
 
   function handleDragEnd() {
     draggedIndexRef.current = null;
+    setDraggingIndex(null);
     setDragOverIndex(null);
-    setIsDragging(false);
   }
 
   function handleDrop(e, targetIndex) {
@@ -132,11 +132,7 @@ function ThumbnailStrip({
           </button>
           <button
             className="icon-btn"
-            onClick={() => {
-              if (window.confirm(`Are you sure you want to delete Page ${currentIndex + 1}?`)) {
-                onRemove && onRemove(currentIndex);
-              }
-            }}
+            onClick={() => onRemove && onRemove(currentIndex)}
             style={{ width: '36px', height: '36px', color: '#ff4444' }}
             title="Delete Page"
           >
@@ -152,7 +148,7 @@ function ThumbnailStrip({
           const bgUrl = item.thumbnail || item.cropped || item.original || '';
           const isActive = currentIndex === idx;
           
-          const isCurrentDragging = draggedIndexRef.current === idx;
+          const isCurrentDragging = draggingIndex === idx;
           const isCurrentDragOver = dragOverIndex === idx;
 
           return (
