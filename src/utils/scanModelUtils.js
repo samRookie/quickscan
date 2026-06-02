@@ -13,6 +13,30 @@ function releaseImage(img) {
   img.src = '';
 }
 
+function buildImageDocumentFields(scan) {
+  const filterCache = scan.filterCache && typeof scan.filterCache === 'object'
+    ? { ...scan.filterCache }
+    : {};
+
+  if (scan.enhanced && typeof scan.enhanced === 'object') {
+    Object.entries(scan.enhanced).forEach(([filterName, imageData]) => {
+      if (filterName !== 'original' && imageData && !filterCache[filterName]) {
+        filterCache[filterName] = imageData;
+      }
+    });
+  }
+
+  return {
+    original: scan.original || scan.originalImage || '',
+    originalImage: scan.originalImage || scan.original || '',
+    cropped: scan.cropped || scan.croppedImage || null,
+    croppedImage: scan.croppedImage || scan.cropped || null,
+    thumbnail: scan.thumbnail || '',
+    preview: scan.preview || '',
+    filterCache,
+  };
+}
+
 /**
  * Normalizes an old or partial scan object to follow the new, extended format-aware scan model structure.
  * Ensures absolute backward compatibility.
@@ -33,34 +57,23 @@ export function normalizeScanFormat(scan) {
     normalized.id = Date.now() + Math.floor(Math.random() * 1000);
   }
 
-  // 2. Map old/new image properties for dual compatibility
-  normalized.original = normalized.original || normalized.originalImage || '';
-  normalized.originalImage = normalized.originalImage || normalized.original || '';
-
-  normalized.cropped = normalized.cropped || normalized.croppedImage || null;
-  normalized.croppedImage = normalized.croppedImage || normalized.cropped || null;
-
+  // 2. Map old/new image properties for dual compatibility.
   // Lightweight derivatives are owned separately from source image data.
   // Do not promote full-resolution originals into thumbnail/preview slots.
-  normalized.thumbnail = normalized.thumbnail || '';
-  normalized.preview = normalized.preview || '';
+  Object.assign(normalized, buildImageDocumentFields(normalized));
 
   // Map active filter enhancement
-  let activeEnhanced = null;
-  if (normalized.enhanced && typeof normalized.enhanced === 'object') {
-    const filter = normalized.selectedFilter || 'original';
-    activeEnhanced = normalized.enhanced[filter];
-  }
-  normalized.enhancedImage = normalized.enhancedImage || activeEnhanced || normalized.croppedImage || normalized.originalImage || '';
-  
-  if (!normalized.enhanced) {
-    normalized.enhanced = {
-      original: normalized.cropped || normalized.original || '',
-      grayscale: null,
-      document: null
-    };
-    normalized.selectedFilter = normalized.selectedFilter || 'original';
-  }
+  const sourceImage = normalized.croppedImage || normalized.originalImage || '';
+  const activeFilter = normalized.selectedFilter || 'original';
+  const activeEnhanced = activeFilter === 'original'
+    ? sourceImage
+    : normalized.filterCache?.[activeFilter];
+
+  normalized.enhancedImage = normalized.enhancedImage || activeEnhanced || sourceImage;
+  normalized.enhanced = {
+    original: sourceImage,
+  };
+  normalized.selectedFilter = activeFilter;
 
   // 3. Normalize format snapshot (Task 6 compatibility layer)
   if (!normalized.format || typeof normalized.format !== 'object') {
@@ -278,76 +291,5 @@ export async function generatePreview(base64Src, maxDim = 800) {
   });
 }
 
-/**
- * Asynchronously applies Grayscale or Document filter enhancements to a raw high-resolution base64 scan
- * using a background offscreen canvas. Used on-demand during exports.
- *
- * @param {string} base64Src - The natural high-resolution base64 image.
- * @param {string} filterName - The name of the enhancement filter ('original', 'grayscale', 'document').
- * @returns {Promise<string>} A Promise that resolves to the processed high-resolution base64 JPEG.
- */
-export async function applyFilterToImage(base64Src, filterName) {
-  if (!base64Src || !filterName || filterName === 'original') {
-    return base64Src;
-  }
-
-  return new Promise((resolve) => {
-    const img = new Image();
-    let canvas = null;
-
-    const settle = (value) => {
-      releaseCanvas(canvas);
-      releaseImage(img);
-      resolve(value);
-    };
-
-    img.onload = () => {
-      try {
-        canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) {
-          settle(base64Src);
-          return;
-        }
-        ctx.drawImage(img, 0, 0);
-
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-
-        if (filterName === 'grayscale') {
-          for (let i = 0; i < data.length; i += 4) {
-            const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-            data[i] = avg;
-            data[i + 1] = avg;
-            data[i + 2] = avg;
-          }
-          ctx.putImageData(imageData, 0, 0);
-          settle(canvas.toDataURL('image/jpeg', 0.95));
-        } else if (filterName === 'document') {
-          const contrastFactor = 1.4;
-          const brightnessOffset = 25;
-          for (let i = 0; i < data.length; i += 4) {
-            data[i] = Math.min(255, Math.max(0, ((data[i] - 128) * contrastFactor) + 128 + brightnessOffset));
-            data[i + 1] = Math.min(255, Math.max(0, ((data[i + 1] - 128) * contrastFactor) + 128 + brightnessOffset));
-            data[i + 2] = Math.min(255, Math.max(0, ((data[i + 2] - 128) * contrastFactor) + 128 + brightnessOffset));
-          }
-          ctx.putImageData(imageData, 0, 0);
-          settle(canvas.toDataURL('image/jpeg', 0.95));
-        } else {
-          settle(base64Src);
-        }
-      } catch (err) {
-        console.warn('[scanModelUtils] Filter application failed:', err);
-        settle(base64Src);
-      }
-    };
-    img.onerror = () => {
-      settle(base64Src);
-    };
-    img.src = base64Src;
-  });
-}
 
 

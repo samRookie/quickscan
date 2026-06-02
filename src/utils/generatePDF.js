@@ -1,6 +1,18 @@
 import { jsPDF } from 'jspdf';
-import { normalizeScanFormat, applyFilterToImage } from './scanModelUtils.js';
+import { normalizeScanFormat } from './scanModelUtils.js';
+import { applyEnhancement } from './enhancementEngine.js';
 import { getExportPageDimensions, calculateImagePlacement } from './exportPageMapping.js';
+
+async function resolveExportImage(scan) {
+  const filterName = scan.selectedFilter || 'original';
+  const rawSource = scan.cropped || scan.original;
+
+  if (!rawSource || filterName === 'original') {
+    return rawSource;
+  }
+
+  return scan.filterCache?.[filterName] || applyEnhancement(rawSource, filterName);
+}
 
 /**
  * Generates a high-quality PDF from an array of scan page objects.
@@ -16,8 +28,7 @@ export async function generatePDF(images) {
 
   // 1. Pre-calculate first page dimensions to initialize jsPDF instance correctly
   const firstScan = normalizeScanFormat(images[0]);
-  const rawFirstSource = firstScan.cropped || firstScan.original;
-  const firstData = await applyFilterToImage(rawFirstSource, firstScan.selectedFilter || 'original');
+  const firstData = await resolveExportImage(firstScan);
   
   let firstWidth = 210;
   let firstHeight = 297;
@@ -46,8 +57,7 @@ export async function generatePDF(images) {
   // 2. Iterate pages and render dynamic scales and custom margins
   for (let i = 0; i < images.length; i++) {
     const scan = normalizeScanFormat(images[i]);
-    const rawSource = scan.cropped || scan.original;
-    const imageData = await applyFilterToImage(rawSource, scan.selectedFilter || 'original');
+    const imageData = await resolveExportImage(scan);
 
     if (!imageData) continue;
 

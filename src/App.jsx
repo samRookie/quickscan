@@ -208,7 +208,8 @@ function App() {
       case STEPS.ENHANCE:
         return (
           <EnhanceScreen
-            image={activeDocument?.preview || activeCropped || activeOriginal}
+            image={activeCropped || activeOriginal}
+            initialFilterCache={activeDocument?.filterCache}
             initialEnhanced={activeDocument?.enhanced}
             initialFilter={activeDocument?.selectedFilter}
             allImages={capturedImages}

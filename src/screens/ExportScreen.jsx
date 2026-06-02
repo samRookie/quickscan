@@ -127,6 +127,14 @@ function ExportScreen({
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    a.href = '';
+
+    window.setTimeout(() => {
+      if (blobUrlRef.current === url) {
+        URL.revokeObjectURL(url);
+        blobUrlRef.current = null;
+      }
+    }, 0);
   }, [fileName, pdfBlob]);
 
   const handleShare = useCallback(async () => {
@@ -173,11 +181,12 @@ function ExportScreen({
       a.href = url;
       a.download = `${fileName || 'QuickScan'}_page_${idx + 1}.jpg`;
       a.click();
+      a.href = '';
     });
   }, [allImages, fileName]);
 
   const previewImage = useMemo(() => (allImages.length > 0
-    ? (allImages[0].preview || allImages[0].cropped || allImages[0].original)
+    ? (allImages[0].preview || null)
     : null
   ), [allImages]);
 

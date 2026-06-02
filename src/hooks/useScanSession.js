@@ -22,6 +22,24 @@ function resolveGeneratedAssetIndex(items, preferredIndex, documentId) {
   return items.findIndex((item) => item?.id === documentId);
 }
 
+function createScanDocument(fields, presetId = 'freeform') {
+  return attachFormatToScan({
+    id: fields.id || Date.now(),
+    original: fields.original || '',
+    originalImage: fields.originalImage || fields.original || '',
+    cropped: fields.cropped ?? null,
+    croppedImage: fields.croppedImage ?? fields.cropped ?? null,
+    enhanced: fields.enhanced || null,
+    enhancedImage: fields.enhancedImage || fields.cropped || fields.original || '',
+    filterCache: fields.filterCache || {},
+    thumbnail: fields.thumbnail || '',
+    preview: fields.preview || '',
+    selectedFilter: fields.selectedFilter || 'original',
+    isLowQuality: Boolean(fields.isLowQuality),
+    metadata: fields.metadata,
+  }, presetId);
+}
+
 export function useScanSession() {
   const [capturedImages, setCapturedImagesState] = useState([]);
   const [currentIndex, setCurrentIndexState] = useState(0);
@@ -96,6 +114,10 @@ export function useScanSession() {
       const targetIndex = resolveGeneratedAssetIndex(previous, index, documentId);
       if (targetIndex < 0) return previous;
 
+      if (!assetPatch.thumbnail && !assetPatch.preview) {
+        return previous;
+      }
+
       return replaceAt(previous, targetIndex, {
         ...previous[targetIndex],
         ...assetPatch,
@@ -167,29 +189,22 @@ export function useScanSession() {
     const targetPreset = presetId || 'freeform';
     const shouldReplace = activeIndex >= 0 && activeIndex < previous.length;
     const targetIndex = shouldReplace ? activeIndex : previous.length;
-    const baseDocument = shouldReplace
-      ? {
-          ...previous[targetIndex],
-          id: Date.now(),
-          original: imageData,
-          originalImage: imageData,
-          cropped: null,
-          croppedImage: null,
-          enhanced: null,
-          enhancedImage: imageData,
-          thumbnail: '',
-          preview: '',
-          selectedFilter: 'original',
-          isLowQuality,
-        }
-      : {
-          id: Date.now(),
-          original: imageData,
-          cropped: null,
-          enhanced: null,
-          isLowQuality,
-        };
-    const nextDocument = attachFormatToScan(baseDocument, targetPreset);
+    const previousDocument = shouldReplace ? previous[targetIndex] : {};
+    const nextDocument = createScanDocument({
+      ...previousDocument,
+      id: Date.now(),
+      original: imageData,
+      originalImage: imageData,
+      cropped: null,
+      croppedImage: null,
+      enhanced: null,
+      enhancedImage: imageData,
+      filterCache: {},
+      thumbnail: '',
+      preview: '',
+      selectedFilter: 'original',
+      isLowQuality,
+    }, targetPreset);
     const nextImages = shouldReplace
       ? replaceAt(previous, targetIndex, nextDocument)
       : [...previous, nextDocument];
@@ -207,20 +222,28 @@ export function useScanSession() {
       ...existing,
       cropped: croppedImageData,
       croppedImage: croppedImageData,
-      enhanced: { original: croppedImageData, grayscale: null, document: null },
+      enhanced: { original: croppedImageData },
       enhancedImage: croppedImageData,
+      filterCache: {},
       thumbnail: '',
       preview: '',
       selectedFilter: 'original',
     }), croppedImageData)
   ), [updateDocument]);
 
-  const updateDocumentEnhancement = useCallback((enhancedFilters, selectedFilter, index = currentIndexRef.current) => {
-    const activeEnhanced = enhancedFilters[selectedFilter] || enhancedFilters.original || '';
+  const updateDocumentEnhancement = useCallback((filterCache, selectedFilter, index = currentIndexRef.current) => {
+    const sourceImage = capturedImagesRef.current[index]?.cropped || capturedImagesRef.current[index]?.original || '';
+    const activeEnhanced = selectedFilter === 'original'
+      ? sourceImage
+      : filterCache?.[selectedFilter] || sourceImage;
 
     updateDocument(index, (existing) => ({
       ...existing,
-      enhanced: enhancedFilters,
+      // Batch 8: non-original filters are cached only after selection, avoiding 4 full image copies per page.
+      enhanced: {
+        original: existing.cropped || existing.original || '',
+      },
+      filterCache: filterCache || {},
       selectedFilter,
       enhancedImage: activeEnhanced,
       preview: '',
@@ -243,8 +266,9 @@ export function useScanSession() {
       };
     }
 
+    // Undo intentionally owns the removed document for a short timeout only.
     setDeletedBuffer({
-      page: previous[indexToRemove],
+      page: normalizeScanFormat(previous[indexToRemove]),
       index: indexToRemove,
     });
 

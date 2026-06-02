@@ -1,5 +1,4 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { normalizeScanFormat } from '../utils/scanModelUtils.js';
 
 /**
  * ThumbnailStrip — Multi-page session horizontal navigator.
@@ -87,9 +86,8 @@ function ThumbnailStrip({
     }
   }, [currentIndex]);
 
-  const activeItem = useMemo(() => (allImages[currentIndex]
-    ? normalizeScanFormat(allImages[currentIndex])
-    : null
+  const activeItem = useMemo(() => (
+    allImages[currentIndex] || null
   ), [allImages, currentIndex]);
 
   const presetLabel = useMemo(() => (activeItem?.format?.presetId
@@ -169,8 +167,8 @@ function ThumbnailStrip({
       {/* Touch-Friendly Horizontal Scrolling Thumbnail Strip */}
       <div className="thumbnail-list">
         {allImages.map((doc, idx) => {
-          const item = normalizeScanFormat(doc);
-          const bgUrl = item.thumbnail || item.cropped || item.original || '';
+          const item = doc || {};
+          const bgUrl = item.thumbnail || item.preview || '';
           const isActive = currentIndex === idx;
           
           const isCurrentDragging = draggingIndex === idx;
