@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { generatePDF } from '../utils/generatePDF';
 import ThumbnailStrip from '../components/ThumbnailStrip';
 
@@ -12,6 +12,7 @@ function sanitizeFilename(name) {
 
 function ExportScreen({
   allImages,
+  documentVersion = 0,
   currentIndex,
   onSelectImage,
   onRemove,
@@ -28,15 +29,21 @@ function ExportScreen({
   const [retryCount, setRetryCount] = useState(0);
   const [shareNotice, setShareNotice] = useState(false);
   const blobUrlRef = useRef(null);
+  const allImagesRef = useRef(allImages);
+
+  useEffect(() => {
+    allImagesRef.current = allImages;
+  }, [allImages]);
 
   useEffect(() => {
     let isMounted = true;
+    const imagesForPdf = allImagesRef.current;
 
     async function buildPDF() {
       await new Promise(r => setTimeout(r, 50));
 
       try {
-        const pdf = await generatePDF(allImages);
+        const pdf = await generatePDF(imagesForPdf);
         const blob = pdf.output('blob');
         if (isMounted) {
           setPdfBlob(blob);
@@ -52,26 +59,29 @@ function ExportScreen({
       }
     }
 
-    if (allImages && allImages.length > 0) {
-      buildPDF();
-    } else {
-      const emptyTimer = setTimeout(() => {
-        if (isMounted) setIsGenerating(false);
-      }, 0);
-      return () => {
-        isMounted = false;
-        clearTimeout(emptyTimer);
-      };
-    }
+    const generationTimer = setTimeout(() => {
+      setIsGenerating(true);
+
+      if (imagesForPdf && imagesForPdf.length > 0) {
+        buildPDF();
+      } else if (isMounted) {
+        if (isMounted) {
+          setPdfBlob(null);
+          setPdfError(null);
+          setIsGenerating(false);
+        }
+      }
+    }, 0);
 
     return () => {
       isMounted = false;
+      clearTimeout(generationTimer);
       if (blobUrlRef.current) {
         URL.revokeObjectURL(blobUrlRef.current);
         blobUrlRef.current = null;
       }
     };
-  }, [allImages, retryCount]);
+  }, [documentVersion, retryCount]);
 
   useEffect(() => {
     if (!shareNotice) return;
@@ -81,7 +91,7 @@ function ExportScreen({
     return () => clearTimeout(timer);
   }, [shareNotice]);
 
-  const handleDownload = async () => {
+  const handleDownload = useCallback(async () => {
     if (!pdfBlob) return;
 
     const safeName = sanitizeFilename(fileName);
@@ -117,9 +127,9 @@ function ExportScreen({
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-  };
+  }, [fileName, pdfBlob]);
 
-  const handleShare = async () => {
+  const handleShare = useCallback(async () => {
     if (!pdfBlob) return;
 
     const safeName = sanitizeFilename(fileName);
@@ -140,11 +150,36 @@ function ExportScreen({
       setShareNotice(true);
       handleDownload();
     }
-  };
+  }, [fileName, handleDownload, pdfBlob]);
 
-  const previewImage = allImages.length > 0
+  const handleRetryPdf = useCallback(() => {
+    setIsGenerating(true);
+    setPdfError(null);
+    setRetryCount((count) => count + 1);
+  }, []);
+
+  const handleFileNameChange = useCallback((e) => {
+    setFileName(sanitizeFilename(e.target.value));
+  }, []);
+
+  const handleRemoveCurrent = useCallback(() => {
+    onRemove?.(currentIndex);
+  }, [currentIndex, onRemove]);
+
+  const handleFallbackImageDownload = useCallback(() => {
+    allImages.forEach((img, idx) => {
+      const url = img.enhanced?.[img.selectedFilter] || img.cropped || img.original;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${fileName || 'QuickScan'}_page_${idx + 1}.jpg`;
+      a.click();
+    });
+  }, [allImages, fileName]);
+
+  const previewImage = useMemo(() => (allImages.length > 0
     ? (allImages[0].preview || allImages[0].cropped || allImages[0].original)
-    : null;
+    : null
+  ), [allImages]);
 
   return (
     <div className="screen-container">
@@ -153,7 +188,7 @@ function ExportScreen({
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
         <h2 className="screen-title">Export PDF</h2>
-        <button className="icon-btn" onClick={() => onRemove && onRemove(currentIndex)}>
+        <button className="icon-btn" onClick={handleRemoveCurrent}>
           <span className="material-symbols-outlined">delete</span>
         </button>
       </div>
@@ -177,7 +212,7 @@ function ExportScreen({
               <div style={{ backgroundColor: 'rgba(255,68,68,0.1)', border: '1px solid #ff4444', padding: '16px', borderRadius: '8px' }}>
                 <h3 style={{ margin: '0 0 8px', color: '#ff4444' }}>Generation Failed</h3>
                 <p style={{ fontSize: '14px', marginBottom: '16px' }}>{pdfError}</p>
-                <button className="btn-primary" onClick={() => { setIsGenerating(true); setPdfError(null); setRetryCount((count) => count + 1); }}>
+                <button className="btn-primary" onClick={handleRetryPdf}>
                   Retry PDF
                 </button>
               </div>
@@ -194,7 +229,7 @@ function ExportScreen({
                       <input
                         type="text"
                         value={fileName}
-                        onChange={(e) => setFileName(sanitizeFilename(e.target.value))}
+                        onChange={handleFileNameChange}
                         style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: 'var(--color-white)', fontSize: '16px', width: '100%' }}
                         placeholder="Enter filename"
                       />
@@ -230,15 +265,7 @@ function ExportScreen({
             )}
 
             {pdfError && (
-              <button className="btn-secondary" onClick={() => {
-                allImages.forEach((img, idx) => {
-                  const url = img.enhanced?.[img.selectedFilter] || img.cropped || img.original;
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `${fileName || 'QuickScan'}_page_${idx+1}.jpg`;
-                  a.click();
-                });
-              }}>
+              <button className="btn-secondary" onClick={handleFallbackImageDownload}>
                 <span className="material-symbols-outlined">image</span> Fallback: Download Images
               </button>
             )}

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FORMAT_PRESETS } from '../config/formatPresets.js';
 
 /**
@@ -174,7 +174,7 @@ function CameraScreen({ onCapture }) {
     return () => clearInterval(interval);
   }, []);
 
-  const toggleTorch = async () => {
+  const toggleTorch = useCallback(async () => {
     if (!streamRef.current) return;
     const track = streamRef.current.getVideoTracks()[0];
     if (track && isTorchSupported) {
@@ -187,20 +187,20 @@ function CameraScreen({ onCapture }) {
         console.error('Failed to toggle torch:', err);
       }
     }
-  };
+  }, [isTorchOn, isTorchSupported]);
 
-  const toggleScreenLight = () => {
-    setIsScreenLightOn(!isScreenLightOn);
-  };
+  const toggleScreenLight = useCallback(() => {
+    setIsScreenLightOn((isOn) => !isOn);
+  }, []);
 
-  const toggleCamera = () => {
+  const toggleCamera = useCallback(() => {
     const next = facingMode === 'environment' ? 'user' : 'environment';
     stopStream();
     setFacingMode(next);
     setIsFrontCamera(next === 'user');
-  };
+  }, [facingMode, stopStream]);
 
-  const handleFileSelect = (e) => {
+  const handleFileSelect = useCallback((e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -209,9 +209,9 @@ function CameraScreen({ onCapture }) {
     };
     reader.readAsDataURL(file);
     e.target.value = '';
-  };
+  }, [onCapture, selectedPresetId]);
 
-  function handleCapture() {
+  const handleCapture = useCallback(() => {
     if (isCapturing) return;
     setIsCapturing(true);
     
@@ -269,7 +269,7 @@ function CameraScreen({ onCapture }) {
         setIsCapturing(false);
       }
     }
-  }
+  }, [isCapturing, isLowLight, onCapture, selectedPresetId, stopStream]);
 
   // Calculate dynamic framing guide guides based on preset id
   const getFrameDimensions = (presetId) => {
@@ -290,7 +290,9 @@ function CameraScreen({ onCapture }) {
     }
   };
 
-  const frameDimensions = getFrameDimensions(selectedPresetId);
+  const frameDimensions = useMemo(() => (
+    getFrameDimensions(selectedPresetId)
+  ), [selectedPresetId]);
 
   if (error) {
     return (

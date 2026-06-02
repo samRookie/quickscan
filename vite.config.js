@@ -9,7 +9,6 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt', // Controlled update prompt to prevent race conditions or forced page reloads
-      includeAssets: ['favicon.svg'],
       manifest: {
         id: '/?source=pwa', // Locks launch identity path
         name: 'QuickScan - Mobile Document Scanner',
@@ -23,27 +22,27 @@ export default defineConfig({
         categories: ['productivity', 'utilities'],
         icons: [
           {
-            src: 'favicon.svg',
+            src: 'icon-192.png',
             sizes: '192x192',
-            type: 'image/svg+xml',
+            type: 'image/png',
             purpose: 'any'
           },
           {
-            src: 'favicon.svg',
+            src: 'icon-512.png',
             sizes: '512x512',
-            type: 'image/svg+xml',
+            type: 'image/png',
             purpose: 'any'
           },
           {
-            src: 'favicon.svg',
+            src: 'icon-maskable-192.png',
             sizes: '192x192',
-            type: 'image/svg+xml',
+            type: 'image/png',
             purpose: 'maskable'
           },
           {
-            src: 'favicon.svg',
+            src: 'icon-maskable-512.png',
             sizes: '512x512',
-            type: 'image/svg+xml',
+            type: 'image/png',
             purpose: 'maskable'
           }
         ]
@@ -51,7 +50,7 @@ export default defineConfig({
       workbox: {
         // Safe document privacy: Only cache static application shell assets
         // Excludes temporary blobs, base64 data, dynamic images, and PDF binaries from persistent SW caching
-        globPatterns: ['**/*.{js,css,html,svg,woff,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,woff,woff2}'],
         runtimeCaching: [],
         cleanupOutdatedCaches: true // Safe auto-cleanup of old cache caches
       }

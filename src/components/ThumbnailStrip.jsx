@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { normalizeScanFormat } from '../utils/scanModelUtils.js';
 
 /**
@@ -21,37 +21,60 @@ function ThumbnailStrip({
   const [draggingIndex, setDraggingIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
 
-  function handleDragStart(e, index) {
+  const handleDragStart = useCallback((e) => {
+    const index = Number(e.currentTarget.dataset.index);
     draggedIndexRef.current = index;
     setDraggingIndex(index);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', index);
-  }
+  }, []);
 
-  function handleDragOver(e, index) {
+  const handleDragOver = useCallback((e) => {
     e.preventDefault();
+    const index = Number(e.currentTarget.dataset.index);
     if (draggedIndexRef.current === index) return;
     setDragOverIndex(index);
-  }
+  }, []);
 
-  function handleDragLeave() {
+  const handleDragLeave = useCallback(() => {
     setDragOverIndex(null);
-  }
+  }, []);
 
-  function handleDragEnd() {
+  const handleDragEnd = useCallback(() => {
     draggedIndexRef.current = null;
     setDraggingIndex(null);
     setDragOverIndex(null);
-  }
+  }, []);
 
-  function handleDrop(e, targetIndex) {
+  const handleDrop = useCallback((e) => {
     e.preventDefault();
+    const targetIndex = Number(e.currentTarget.dataset.index);
     const sourceIndex = draggedIndexRef.current;
     if (sourceIndex !== null && sourceIndex !== targetIndex) {
       onReorder && onReorder(sourceIndex, targetIndex);
     }
     handleDragEnd();
-  }
+  }, [handleDragEnd, onReorder]);
+
+  const handleSelectThumbnail = useCallback((e) => {
+    onSelectImage?.(Number(e.currentTarget.dataset.index));
+  }, [onSelectImage]);
+
+  const handleMoveLeft = useCallback(() => {
+    onReorder?.(currentIndex, 'left');
+  }, [currentIndex, onReorder]);
+
+  const handleMoveRight = useCallback(() => {
+    onReorder?.(currentIndex, 'right');
+  }, [currentIndex, onReorder]);
+
+  const handleReplaceCurrent = useCallback(() => {
+    onReplace?.(currentIndex);
+  }, [currentIndex, onReplace]);
+
+  const handleRemoveCurrent = useCallback(() => {
+    onRemove?.(currentIndex);
+  }, [currentIndex, onRemove]);
 
   // Smoothly center active thumbnail in scrolling horizontal bar
   useEffect(() => {
@@ -64,15 +87,17 @@ function ThumbnailStrip({
     }
   }, [currentIndex]);
 
-  if (allImages.length === 0) return null;
-
-  const activeItem = allImages[currentIndex]
+  const activeItem = useMemo(() => (allImages[currentIndex]
     ? normalizeScanFormat(allImages[currentIndex])
-    : null;
+    : null
+  ), [allImages, currentIndex]);
 
-  const presetLabel = activeItem?.format?.presetId
+  const presetLabel = useMemo(() => (activeItem?.format?.presetId
     ? activeItem.format.presetId.toUpperCase().replace('_', ' ')
-    : 'FREEFORM';
+    : 'FREEFORM'
+  ), [activeItem]);
+
+  if (allImages.length === 0) return null;
 
   return (
     <div className="thumbnail-strip-container">
@@ -106,7 +131,7 @@ function ThumbnailStrip({
         <div className="thumbnail-actions-row">
           <button
             className="icon-btn"
-            onClick={() => onReorder && onReorder(currentIndex, 'left')}
+            onClick={handleMoveLeft}
             disabled={currentIndex === 0}
             style={{ width: '36px', height: '36px', opacity: currentIndex === 0 ? 0.3 : 1 }}
             title="Move Page Left"
@@ -115,7 +140,7 @@ function ThumbnailStrip({
           </button>
           <button
             className="icon-btn"
-            onClick={() => onReorder && onReorder(currentIndex, 'right')}
+            onClick={handleMoveRight}
             disabled={currentIndex === allImages.length - 1}
             style={{ width: '36px', height: '36px', opacity: currentIndex === allImages.length - 1 ? 0.3 : 1 }}
             title="Move Page Right"
@@ -124,7 +149,7 @@ function ThumbnailStrip({
           </button>
           <button
             className="icon-btn"
-            onClick={() => onReplace && onReplace(currentIndex)}
+            onClick={handleReplaceCurrent}
             style={{ width: '36px', height: '36px', color: 'var(--color-text-dim)' }}
             title="Replace Page (Rescan)"
           >
@@ -132,7 +157,7 @@ function ThumbnailStrip({
           </button>
           <button
             className="icon-btn"
-            onClick={() => onRemove && onRemove(currentIndex)}
+            onClick={handleRemoveCurrent}
             style={{ width: '36px', height: '36px', color: '#ff4444' }}
             title="Delete Page"
           >
@@ -155,17 +180,18 @@ function ThumbnailStrip({
             <div
               key={item.id || idx}
               ref={isActive ? activeRef : null}
+              data-index={idx}
               className={`thumbnail ${isActive ? 'active' : ''} ${isCurrentDragging ? 'dragging' : ''} ${isCurrentDragOver ? 'drag-over' : ''}`}
-              onClick={() => onSelectImage && onSelectImage(idx)}
+              onClick={handleSelectThumbnail}
               style={{
                 backgroundImage: bgUrl ? `url(${bgUrl})` : 'none',
               }}
               draggable="true"
-              onDragStart={(e) => handleDragStart(e, idx)}
-              onDragOver={(e) => handleDragOver(e, idx)}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDragEnd={handleDragEnd}
-              onDrop={(e) => handleDrop(e, idx)}
+              onDrop={handleDrop}
             >
               <div className="thumbnail-badge">{idx + 1}</div>
             </div>

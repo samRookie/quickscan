@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
-import { normalizeScanFormat, attachFormatToScan, generateThumbnail, generatePreview } from './utils/scanModelUtils.js';
 import { useRegisterSW } from 'virtual:pwa-register/react';
+import { useScanSession } from './hooks/useScanSession.js';
 
 // Lazy load screens for bundle optimization
 const CameraScreen = React.lazy(() => import('./screens/CameraScreen'));
@@ -12,7 +12,7 @@ const ExportScreen = React.lazy(() => import('./screens/ExportScreen'));
  * Workflow steps for the QuickScan app flow.
  * Each step represents a stage in the document scanning pipeline.
  *
- * Flow: camera → adjust → enhance → export
+ * Flow: camera -> adjust -> enhance -> export
  */
 const STEPS = {
   CAMERA: 'camera',
@@ -34,29 +34,34 @@ function App() {
     },
   });
 
+  const {
+    capturedImages,
+    currentIndex,
+    deletedBuffer,
+    documentVersion,
+    activeDocument,
+    activeOriginal,
+    activeCropped,
+    setCurrentIndex,
+    addDocument,
+    updateDocumentCrop,
+    updateDocumentEnhancement,
+    updateDocumentFormat,
+    removeDocument,
+    replaceDocument,
+    reorderDocuments,
+    clearSession,
+    restoreDeletedDocument,
+  } = useScanSession();
+
   const [currentStep, setCurrentStep] = useState(STEPS.CAMERA);
-  const [capturedImages, setCapturedImages] = useState([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [deletedBuffer, setDeletedBuffer] = useState(null);
   const [sessionNotice, setSessionNotice] = useState(false);
 
-  // Clear session to ensure data privacy
-  const clearSession = useCallback(() => {
-    setCapturedImages([]);
-    setCurrentIndex(0);
-    setDeletedBuffer(null);
+  const handleClearSession = useCallback(() => {
+    clearSession();
     setSessionNotice(false);
     setCurrentStep(STEPS.CAMERA);
-  }, []);
-
-  // Auto-expire deletion buffer after 6 seconds for clean memory recycling
-  useEffect(() => {
-    if (!deletedBuffer) return;
-    const timer = setTimeout(() => {
-      setDeletedBuffer(null);
-    }, 6000);
-    return () => clearTimeout(timer);
-  }, [deletedBuffer]);
+  }, [clearSession]);
 
   // Auto-dismiss privacy notice without blocking the runtime
   useEffect(() => {
@@ -67,36 +72,6 @@ function App() {
     return () => clearTimeout(timer);
   }, [sessionNotice]);
 
-  // Asynchronous thumbnail generation pipeline to compress images to tiny ~5-10KB previews
-  const generateAndStoreThumbnail = useCallback((index, sourceImage) => {
-    if (!sourceImage) return;
-    generateThumbnail(sourceImage).then((thumb) => {
-      setCapturedImages((prev) => {
-        if (index < 0 || index >= prev.length) return prev;
-        const newArray = [...prev];
-        newArray[index] = { ...newArray[index], thumbnail: thumb };
-        return newArray;
-      });
-    }).catch(err => {
-      console.error('[App] Failed to generate async preview:', err);
-    });
-  }, []);
-
-  // Asynchronous preview generation pipeline to compress images to medium-resolution ~40-50KB previews
-  const generateAndStorePreview = useCallback((index, sourceImage) => {
-    if (!sourceImage) return;
-    generatePreview(sourceImage).then((previewImg) => {
-      setCapturedImages((prev) => {
-        if (index < 0 || index >= prev.length) return prev;
-        const newArray = [...prev];
-        newArray[index] = { ...newArray[index], preview: previewImg };
-        return newArray;
-      });
-    }).catch(err => {
-      console.error('[App] Failed to generate async preview:', err);
-    });
-  }, []);
-
   // 15-minute inactivity auto-clear for privacy
   useEffect(() => {
     let timeout;
@@ -104,7 +79,7 @@ function App() {
       clearTimeout(timeout);
       timeout = setTimeout(() => {
         if (capturedImages.length > 0) {
-          clearSession();
+          handleClearSession();
           setSessionNotice(true);
         }
       }, 15 * 60 * 1000);
@@ -121,201 +96,87 @@ function App() {
       window.removeEventListener('keydown', resetTimer);
       window.removeEventListener('touchstart', resetTimer);
     };
-  }, [capturedImages, clearSession]);
-
-  // Get the currently active document
-  const activeDocument = capturedImages[currentIndex]
-    ? normalizeScanFormat(capturedImages[currentIndex])
-    : null;
-  const activeOriginal = activeDocument ? activeDocument.original : null;
-  const activeCropped = activeDocument ? activeDocument.cropped : null;
+  }, [capturedImages.length, handleClearSession]);
 
   /**
    * Called by CameraScreen after a frame is captured.
-   * Stores the base64 image and navigates to the adjust step.
+   * Stores the image in the scan session and navigates to the adjust step.
    */
-  function handleCapture(imageData, presetId = 'freeform', isLowQuality = false) {
-    let targetIndex = currentIndex;
-    setCapturedImages((prev) => {
-      const newArray = [...prev];
-      let rawScan;
-      const targetPreset = presetId || 'freeform';
-      if (currentIndex < newArray.length) {
-        rawScan = { ...newArray[currentIndex], original: imageData, cropped: null, enhanced: null, isLowQuality };
-        newArray[currentIndex] = attachFormatToScan(rawScan, targetPreset);
-        targetIndex = currentIndex;
-      } else {
-        rawScan = { id: Date.now(), original: imageData, cropped: null, enhanced: null, isLowQuality };
-        newArray.push(attachFormatToScan(rawScan, targetPreset));
-        targetIndex = newArray.length - 1;
-      }
-      return newArray;
-    });
-
-    // Trigger non-blocking async preview compression
-    generateAndStoreThumbnail(targetIndex, imageData);
-    generateAndStorePreview(targetIndex, imageData);
+  const handleCapture = useCallback((imageData, presetId = 'freeform', isLowQuality = false) => {
+    addDocument(imageData, presetId, isLowQuality);
     setCurrentStep(STEPS.ADJUST);
-  }
+  }, [addDocument]);
 
   /**
    * Called to retake the current image.
-   * Soft return to camera — session state is preserved.
+   * Soft return to camera - session state is preserved.
    */
-  function handleRetake() {
+  const handleRetake = useCallback(() => {
     setCurrentStep(STEPS.CAMERA);
-  }
+  }, []);
 
   /**
    * Called to scan another page without losing previous images.
    */
-  function handleScanMore() {
+  const handleScanMore = useCallback(() => {
     setCurrentIndex(capturedImages.length);
     setCurrentStep(STEPS.CAMERA);
-  }
+  }, [capturedImages.length, setCurrentIndex]);
 
   /**
-   * Called to remove a page with a 6-second undo capability.
-   * Shifts selection focus logically and atomic-clears the page.
+   * Called to remove a page with undo capability.
+   * If the session becomes empty, the shell returns to camera.
    */
   const handleRemoveImage = useCallback((indexToRemove) => {
-    setCapturedImages((prev) => {
-      if (indexToRemove < 0 || indexToRemove >= prev.length) return prev;
-      
-      // Store in temporary deletion buffer before filtering out
-      setDeletedBuffer({
-        page: prev[indexToRemove],
-        index: indexToRemove
-      });
+    const result = removeDocument(indexToRemove);
+    if (result.removed && result.remainingCount === 0) {
+      setCurrentStep(STEPS.CAMERA);
+    }
+  }, [removeDocument]);
 
-      const newArray = prev.filter((_, idx) => idx !== indexToRemove);
-      
-      if (newArray.length === 0) {
-        // All images deleted, reset state and go to camera
-        setCurrentIndex(0);
-        setCurrentStep(STEPS.CAMERA);
-      } else if (currentIndex >= newArray.length) {
-        setCurrentIndex(newArray.length - 1);
-      } else if (indexToRemove < currentIndex) {
-        setCurrentIndex(currentIndex - 1);
-      }
-      return newArray;
-    });
-  }, [currentIndex]);
-
-  /**
-   * Safe accidental recovery undo handler.
-   * Restores the page from temporary buffer back to its original array slot.
-   */
-  const handleUndoDelete = useCallback(() => {
-    if (!deletedBuffer) return;
-    const { page, index } = deletedBuffer;
-    setCapturedImages((prev) => {
-      const restored = [...prev];
-      // Splice the page back to its exact index
-      restored.splice(index, 0, page);
-      return restored;
-    });
-    setCurrentIndex(index);
-    setDeletedBuffer(null);
-  }, [deletedBuffer]);
-
-  function handleCropDone(croppedImageData) {
-    setCapturedImages((prev) => {
-      const newArray = [...prev];
-      if (newArray[currentIndex]) {
-        const existing = newArray[currentIndex];
-        const updated = {
-          ...existing,
-          cropped: croppedImageData,
-          croppedImage: croppedImageData,
-          enhanced: { original: croppedImageData, grayscale: null, document: null },
-          enhancedImage: croppedImageData,
-          selectedFilter: 'original'
-        };
-        newArray[currentIndex] = normalizeScanFormat(updated);
-      }
-      return newArray;
-    });
-
-    // Trigger non-blocking async preview compression
-    generateAndStoreThumbnail(currentIndex, croppedImageData);
-    generateAndStorePreview(currentIndex, croppedImageData);
+  const handleCropDone = useCallback((croppedImageData) => {
+    updateDocumentCrop(croppedImageData);
     setCurrentStep(STEPS.ENHANCE);
-  }
+  }, [updateDocumentCrop]);
 
   /**
    * Called by EnhanceScreen when user is done applying filters.
    * Advances to the export step.
    */
-  function handleEnhanceDone(enhancedFilters, selectedFilter) {
-    const activeEnhanced = enhancedFilters[selectedFilter] || enhancedFilters.original || '';
-    setCapturedImages((prev) => {
-      const newArray = [...prev];
-      if (newArray[currentIndex]) {
-        const existing = newArray[currentIndex];
-        const updated = {
-          ...existing,
-          enhanced: enhancedFilters,
-          selectedFilter: selectedFilter,
-          enhancedImage: activeEnhanced
-        };
-        newArray[currentIndex] = normalizeScanFormat(updated);
-      }
-      return newArray;
-    });
-
-    // Trigger non-blocking async preview compression
-    generateAndStoreThumbnail(currentIndex, activeEnhanced);
-    generateAndStorePreview(currentIndex, activeEnhanced);
+  const handleEnhanceDone = useCallback((enhancedFilters, selectedFilter) => {
+    updateDocumentEnhancement(enhancedFilters, selectedFilter);
     setCurrentStep(STEPS.EXPORT);
-  }
-
-  /**
-   * Called when a format preset is updated for the active scanned image.
-   * Preserves state of pages independently.
-   */
-  const handleFormatChange = useCallback((presetId) => {
-    setCapturedImages((prev) => {
-      const newArray = [...prev];
-      if (newArray[currentIndex]) {
-        newArray[currentIndex] = attachFormatToScan(newArray[currentIndex], presetId);
-      }
-      return newArray;
-    });
-  }, [currentIndex]);
+  }, [updateDocumentEnhancement]);
 
   /**
    * Triggers rescanning / replacing the current scanned page at the given index.
    * Switches to the camera screen while preserving the target replacement index.
    */
   const handleReplacePage = useCallback((index) => {
-    setCurrentIndex(index);
-    setCurrentStep(STEPS.CAMERA);
+    if (replaceDocument(index)) {
+      setCurrentStep(STEPS.CAMERA);
+    }
+  }, [replaceDocument]);
+
+  const handleBackToAdjust = useCallback(() => {
+    setCurrentStep(STEPS.ADJUST);
   }, []);
 
-  const handleReorderPage = useCallback((index, targetInput) => {
-    setCapturedImages((prev) => {
-      if (index < 0 || index >= prev.length) return prev;
-      
-      let targetIndex;
-      if (typeof targetInput === 'number') {
-        targetIndex = targetInput;
-      } else {
-        targetIndex = targetInput === 'left' ? index - 1 : index + 1;
-      }
-      
-      if (targetIndex < 0 || targetIndex >= prev.length || targetIndex === index) return prev;
-
-      const newArray = [...prev];
-      // Atomic insert reordering via array splicing (mobile-native feel)
-      const [movedItem] = newArray.splice(index, 1);
-      newArray.splice(targetIndex, 0, movedItem);
-
-      setCurrentIndex(targetIndex);
-      return newArray;
-    });
+  const handleBackToEnhance = useCallback(() => {
+    setCurrentStep(STEPS.ENHANCE);
   }, []);
+
+  const handleDismissSessionNotice = useCallback(() => {
+    setSessionNotice(false);
+  }, []);
+
+  const handleApplyUpdate = useCallback(() => {
+    updateServiceWorker(true);
+  }, [updateServiceWorker]);
+
+  const handleDismissUpdate = useCallback(() => {
+    setNeedRefresh(false);
+  }, [setNeedRefresh]);
 
   /**
    * Renders the active screen component based on current workflow step.
@@ -333,14 +194,14 @@ function App() {
             currentIndex={currentIndex}
             activeDocument={activeDocument}
             isLowQuality={activeDocument?.isLowQuality}
-            onSelectImage={(index) => setCurrentIndex(index)}
+            onSelectImage={setCurrentIndex}
             onRemove={handleRemoveImage}
-            onReorder={handleReorderPage}
+            onReorder={reorderDocuments}
             onReplace={handleReplacePage}
             onScanMore={handleScanMore}
             onBack={handleRetake}
             onDone={handleCropDone}
-            onFormatChange={handleFormatChange}
+            onFormatChange={updateDocumentFormat}
           />
         );
 
@@ -352,12 +213,12 @@ function App() {
             initialFilter={activeDocument?.selectedFilter}
             allImages={capturedImages}
             currentIndex={currentIndex}
-            onSelectImage={(index) => setCurrentIndex(index)}
+            onSelectImage={setCurrentIndex}
             onRemove={handleRemoveImage}
-            onReorder={handleReorderPage}
+            onReorder={reorderDocuments}
             onReplace={handleReplacePage}
             onScanMore={handleScanMore}
-            onBack={() => setCurrentStep(STEPS.ADJUST)}
+            onBack={handleBackToAdjust}
             onDone={handleEnhanceDone}
           />
         );
@@ -366,14 +227,15 @@ function App() {
         return (
           <ExportScreen
             allImages={capturedImages}
+            documentVersion={documentVersion}
             currentIndex={currentIndex}
-            onSelectImage={(index) => setCurrentIndex(index)}
+            onSelectImage={setCurrentIndex}
             onRemove={handleRemoveImage}
-            onReorder={handleReorderPage}
+            onReorder={reorderDocuments}
             onReplace={handleReplacePage}
             onScanMore={handleScanMore}
-            onBack={() => setCurrentStep(STEPS.ENHANCE)}
-            onFinish={clearSession}
+            onBack={handleBackToEnhance}
+            onFinish={handleClearSession}
           />
         );
 
@@ -394,7 +256,7 @@ function App() {
             <span className="material-symbols-outlined undo-banner-icon">delete_sweep</span>
             <span className="undo-banner-text">Page {deletedBuffer.index + 1} deleted.</span>
           </div>
-          <button className="undo-banner-btn" onClick={handleUndoDelete}>
+          <button className="undo-banner-btn" onClick={restoreDeletedDocument}>
             <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>undo</span>
             Undo
           </button>
@@ -407,7 +269,7 @@ function App() {
             <span className="material-symbols-outlined session-toast-icon">lock_reset</span>
             <span className="session-toast-text">Session expired. Images were cleared for privacy.</span>
           </div>
-          <button className="session-toast-btn" onClick={() => setSessionNotice(false)}>
+          <button className="session-toast-btn" onClick={handleDismissSessionNotice}>
             Dismiss
           </button>
         </div>
@@ -423,10 +285,10 @@ function App() {
             </div>
           </div>
           <div className="update-toast-actions">
-            <button className="update-toast-btn primary" onClick={() => updateServiceWorker(true)}>
+            <button className="update-toast-btn primary" onClick={handleApplyUpdate}>
               Update
             </button>
-            <button className="update-toast-btn secondary" onClick={() => setNeedRefresh(false)}>
+            <button className="update-toast-btn secondary" onClick={handleDismissUpdate}>
               Dismiss
             </button>
           </div>

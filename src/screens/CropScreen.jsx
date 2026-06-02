@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Cropper from 'cropperjs';
 import 'cropperjs/dist/cropper.css';
 import ThumbnailStrip from '../components/ThumbnailStrip';
@@ -27,9 +27,12 @@ function CropScreen({
   const [straightenAngle, setStraightenAngle] = useState(0);
 
   // Sourcing the current format preset directly from the active document state
-  const activePreset = activeDocument?.format
-    ? getFormatPresetById(activeDocument.format.presetId)
-    : DEFAULT_FORMAT_PRESET;
+  const activePresetId = activeDocument?.format?.presetId;
+  const activePreset = useMemo(() => (
+    activePresetId
+      ? getFormatPresetById(activePresetId)
+      : DEFAULT_FORMAT_PRESET
+  ), [activePresetId]);
 
   useEffect(() => {
     if (!imageRef.current || !image) return;
@@ -77,11 +80,12 @@ function CropScreen({
     };
   }, [image, activePreset]);
 
-  async function handleCrop() {
+  const handleCrop = useCallback(async () => {
     const cropper = cropperRef.current;
     if (!cropper) return;
 
     setIsCropping(true);
+    let cropCanvas = null;
 
     try {
       // Diagnostic logs to verify natural resolution preservation
@@ -89,27 +93,31 @@ function CropScreen({
       const originalHeight = imageRef.current?.naturalHeight || 0;
       console.log(`[CropScreen] Source natural dimensions: ${originalWidth}x${originalHeight}`);
 
-      const canvas = cropper.getCroppedCanvas({
+      cropCanvas = cropper.getCroppedCanvas({
         imageSmoothingEnabled: true,
         imageSmoothingQuality: 'high'
       });
       
-      if (!canvas) {
+      if (!cropCanvas) {
         throw new Error('No crop area is available.');
       }
 
-      console.log(`[CropScreen] Cropped canvas natural size: ${canvas.width}x${canvas.height}`);
+      console.log(`[CropScreen] Cropped canvas natural size: ${cropCanvas.width}x${cropCanvas.height}`);
 
-      const croppedImage = canvas.toDataURL('image/jpeg', 1.0);
+      const croppedImage = cropCanvas.toDataURL('image/jpeg', 1.0);
       onDone(croppedImage);
     } catch (err) {
       console.error('[CropScreen] Crop failed:', err);
     } finally {
+      if (cropCanvas) {
+        cropCanvas.width = 0;
+        cropCanvas.height = 0;
+      }
       setIsCropping(false);
     }
-  }
+  }, [onDone]);
 
-  const applyRotation = (count, angle) => {
+  const applyRotation = useCallback((count, angle) => {
     if (!cropperRef.current) return;
     const cropper = cropperRef.current;
 
@@ -138,27 +146,27 @@ function CropScreen({
     );
 
     cropper.zoomTo(fitZoom);
-  };
+  }, []);
 
-  const handleRotateLeft = () => {
+  const handleRotateLeft = useCallback(() => {
     const newCount = rotationCount - 1;
     setRotationCount(newCount);
     applyRotation(newCount, straightenAngle);
-  };
+  }, [applyRotation, rotationCount, straightenAngle]);
 
-  const handleRotateRight = () => {
+  const handleRotateRight = useCallback(() => {
     const newCount = rotationCount + 1;
     setRotationCount(newCount);
     applyRotation(newCount, straightenAngle);
-  };
+  }, [applyRotation, rotationCount, straightenAngle]);
 
-  const handleStraighten = (e) => {
+  const handleStraighten = useCallback((e) => {
     const angle = parseFloat(e.target.value);
     setStraightenAngle(angle);
     applyRotation(rotationCount, angle);
-  };
+  }, [applyRotation, rotationCount]);
 
-  const handlePresetSelect = (presetId) => {
+  const handlePresetSelect = useCallback((presetId) => {
     try {
       const targetPreset = getFormatPresetById(presetId);
       const targetRatio = getAspectRatioForPreset(targetPreset);
@@ -174,9 +182,9 @@ function CropScreen({
     } catch (err) {
       console.error('[CropScreen] Failed to set format preset:', err);
     }
-  };
+  }, [onFormatChange]);
 
-  function handleReset() {
+  const handleReset = useCallback(() => {
     const cropper = cropperRef.current;
     if (cropper) {
       cropper.reset();
@@ -187,7 +195,11 @@ function CropScreen({
       const currentRatio = getAspectRatioForPreset(activePreset);
       cropper.setAspectRatio((currentRatio === null || isNaN(currentRatio)) ? NaN : currentRatio);
     }
-  }
+  }, [activePreset]);
+
+  const handleRemoveCurrent = useCallback(() => {
+    onRemove?.(currentIndex);
+  }, [currentIndex, onRemove]);
 
   if (!image) {
     return (
@@ -206,7 +218,7 @@ function CropScreen({
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
         <h2 className="screen-title">Adjust</h2>
-        <button className="icon-btn" onClick={() => onRemove && onRemove(currentIndex)}>
+        <button className="icon-btn" onClick={handleRemoveCurrent}>
           <span className="material-symbols-outlined">delete</span>
         </button>
       </div>
